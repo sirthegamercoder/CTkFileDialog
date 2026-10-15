@@ -72,6 +72,7 @@ class _DrawApp:
         tool_tip: bool = False,
         title: str = "CTkFileDialog",
         geometry: str = "1320x720",
+        icon_path: Optional[str] = None,
     ) -> None:
         self.method = method
         self.filetypes = filetypes
@@ -103,6 +104,11 @@ class _DrawApp:
         self.app = ctk.CTkToplevel()
         self.app.title(title)
         self.app.geometry(geometry)
+        if icon_path:
+            try:
+                self.app.wm_iconbitmap(icon_path)
+            except Exception:
+                pass
         self.app.protocol("WM_DELETE_WINDOW", self.protocol_windows)
         self.app.bind("<Alt-Left>", lambda _: self._go_back())
 
@@ -769,6 +775,7 @@ class _MiniDialog:
         _extra_method: str = "",
         geometry: str = "500x400",
         title: str = "CTkFileDialog",
+        icon_path: Optional[str] = None,
     ):
         self.method = method
         self._extra_method = _extra_method
@@ -799,6 +806,11 @@ class _MiniDialog:
         self.master = ctk.CTkToplevel()
         self.master.geometry(geometry)
         self.master.title(title)
+        if icon_path:
+            try:
+                self.master.wm_iconbitmap(icon_path)
+            except Exception:
+                pass
         self.master.bind("<Alt-Left>", lambda _: self._up())
 
         self._build_top_side()

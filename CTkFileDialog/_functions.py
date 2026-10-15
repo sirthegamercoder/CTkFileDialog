@@ -26,6 +26,7 @@ def askopenfilename(
     tool_tip: bool = False,
     geometry: Tuple[str, str] = ("1320x720", "500x400"),
     title: str = "CTkFileDialog",
+    icon: Optional[str] = None,
 ) -> Optional[str]:
     if style == "Default":
         app = _DrawApp(
@@ -39,6 +40,7 @@ def askopenfilename(
             tool_tip=tool_tip,
             geometry=geometry[0],
             title=title,
+            icon_path=icon,
         )
         app.app.wait_window()
         return app.selected_file if app.selected_file else None
@@ -51,6 +53,7 @@ def askopenfilename(
         hidden=hidden,
         geometry=geometry[1],
         title=title,
+        icon_path=icon,
     )
     return app.selected_path if app.selected_path else None
 
@@ -65,6 +68,7 @@ def askdirectory(
     tool_tip: bool = False,
     geometry: Tuple[str, str] = ("1320x720", "500x400"),
     title: str = "CTkFileDialog",
+    icon: Optional[str] = None,
 ) -> Optional[str]:
     if style == "Default":
         app = _DrawApp(
@@ -76,6 +80,7 @@ def askdirectory(
             tool_tip=tool_tip,
             geometry=geometry[0],
             title=title,
+            icon_path=icon,
         )
         app.app.wait_window()
         return app.selected_file if app.selected_file else None
@@ -88,6 +93,7 @@ def askdirectory(
         autocomplete=autocomplete,
         title=title,
         geometry=geometry[1],
+        icon_path=icon,
     )
     return app.selected_path if app.selected_path else None
 
@@ -104,6 +110,7 @@ def askopenfilenames(
     tool_tip: bool = False,
     geometry: Tuple[str, str] = ("1320x720", "500x400"),
     title: str = "CTkFileDialog",
+    icon: Optional[str] = None,
 ) -> Optional[Tuple[str, ...]]:
     if style == "Default":
         app = _DrawApp(
@@ -117,6 +124,7 @@ def askopenfilenames(
             tool_tip=tool_tip,
             geometry=geometry[0],
             title=title,
+            icon_path=icon,
         )
         app.app.wait_window()
         return tuple(app.selected_objects) if app.selected_objects else None
@@ -129,6 +137,7 @@ def askopenfilenames(
         autocomplete=autocomplete,
         geometry=geometry[1],
         title=title,
+        icon_path=icon,
     )
     return tuple(app.selected_paths) if app.selected_paths else None
 
@@ -145,6 +154,7 @@ def asksaveasfilename(
     tool_tip: bool = False,
     geometry: Tuple[str, str] = ("1320x720", "500x400"),
     title: str = "CTkFileDialog",
+    icon: Optional[str] = None,
 ) -> Optional[str]:
     if style == "Default":
         app = _DrawApp(
@@ -158,6 +168,7 @@ def asksaveasfilename(
             tool_tip=tool_tip,
             geometry=geometry[0],
             title=title,
+            icon_path=icon,
         )
         app.app.wait_window()
         return app.selected_file if app.selected_file else None
@@ -170,6 +181,7 @@ def asksaveasfilename(
         autocomplete=autocomplete,
         geometry=geometry[1],
         title=title,
+        icon_path=icon,
     )
     return app.selected_path if app.selected_path else None
 
@@ -203,6 +215,7 @@ def asksaveasfile(
     tool_tip: bool = False,
     geometry: Tuple[str, str] = ("1320x720", "500x400"),
     title: str = "CTkFileDialog",
+    icon: Optional[str] = None,
     **kwargs,
 ):
     if style == "Default":
@@ -217,6 +230,7 @@ def asksaveasfile(
             tool_tip=tool_tip,
             geometry=geometry[0],
             title=title,
+            icon_path=icon,
         )
         app.app.wait_window()
         if not app.selected_file:
@@ -231,6 +245,7 @@ def asksaveasfile(
         autocomplete=autocomplete,
         geometry=geometry[1],
         title=title,
+        icon_path=icon,
     )
     if not app.selected_path:
         return None
@@ -266,6 +281,7 @@ def askopenfile(
     tool_tip: bool = False,
     geometry: Tuple[str, str] = ("1320x720", "500x400"),
     title: str = "CTkFileDialog",
+    icon: Optional[str] = None,
     **kwargs,
 ):
     if style == "Default":
@@ -280,6 +296,7 @@ def askopenfile(
             tool_tip=tool_tip,
             geometry=geometry[0],
             title=title,
+            icon_path=icon,
         )
         app.app.wait_window()
         if not app.selected_file:
@@ -294,6 +311,7 @@ def askopenfile(
         autocomplete=autocomplete,
         geometry=geometry[1],
         title=title,
+        icon_path=icon,
     )
     if not app.selected_path:
         return None
@@ -329,6 +347,7 @@ def askopenfiles(
     tool_tip: bool = False,
     geometry: Tuple[str, str] = ("1320x720", "500x400"),
     title: str = "CTkFileDialog",
+    icon: Optional[str] = None,
     **kwargs,
 ):
     if style == "Default":
@@ -343,6 +362,7 @@ def askopenfiles(
             tool_tip=tool_tip,
             geometry=geometry[0],
             title=title,
+            icon_path=icon,
         )
         app.app.wait_window()
         if not app.selected_objects:
@@ -357,6 +377,7 @@ def askopenfiles(
         autocomplete=autocomplete,
         geometry=geometry[1],
         title=title,
+        icon_path=icon,
     )
     if not app.selected_paths:
         return None
