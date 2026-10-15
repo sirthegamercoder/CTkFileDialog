@@ -1,59 +1,68 @@
-import os, re, cv2, time
-import customtkinter as ctk
-from CTkMessagebox import CTkMessagebox
+import os
+import re
+import time
+import platform
 from pathlib import Path
-from PIL import Image
+from typing import Any, List, Optional
+
+import cv2
+import customtkinter as ctk
 import tkinter as tk
-from CTkToolTip import *
-from typing import Any, Literal, Optional, TextIO, List
-from _tkinter import TclError
 from tkinter import ttk
-import _tkinter
+from PIL import Image
+from CTkMessagebox import CTkMessagebox
+from CTkToolTip import CTkToolTip
+from _tkinter import TclError
+
 from ._system import find_owner
 
 
+def _path_is_selectable(path: Optional[str]) -> bool:
+    if not path or not isinstance(path, str):
+        return False
+    try:
+        return os.path.exists(path)
+    except OSError:
+        return False
+
+
+def _dedupe_preserving_order(items: list) -> list:
+    seen = set()
+    out = []
+    for x in items:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
 class _CustomToolTip(CTkToolTip):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def _show(self) -> None:
         if not self.widget.winfo_exists():
             self.hide()
             self.destroy()
-
-        if self.status == "inside" and time.time() - self.last_moved >= self.delay:
-            self.status = "visible"
-            try:
-                self.deiconify()
-            except _tkinter.TclError:
-                pass
+            return
+        super()._show()
 
 
 class _System:
-
-    def __init__(self) -> None:
-        pass
-
     @staticmethod
-    def GetPath(path=None) -> str:
+    def get_path(path: Optional[str] = None) -> str:
         if path is None:
             path = os.getcwd()
         return f"{path}" if path == os.getenv("HOME") else path
 
     @staticmethod
-    def parse_path(path):
-
+    def parse_path(path: str) -> str:
         return os.path.abspath(os.path.expanduser(os.path.expandvars(path)))
 
 
 class _DrawApp:
-
     def __init__(
         self,
         method: str,
         filetypes: Optional[List[str]] = None,
-        bufering: int = 1,
+        buffering: int = 1,
         encoding: str = "utf-8",
         current_path: str = ".",
         hidden: bool = False,
@@ -64,105 +73,96 @@ class _DrawApp:
         title: str = "CTkFileDialog",
         geometry: str = "1320x720",
     ) -> None:
-
-        self.current_path = current_path
-
-        if not self.current_path:
-            self.current_path = os.getcwd()
-        else:
-            self.current_path = _System.parse_path(path=self.current_path)
-        self.autocomplete = autocomplete
-
-        self.preview_img = preview_img
-        self.bufering = bufering
+        self.method = method
+        self.filetypes = filetypes
+        self.buffering = buffering
         self.encoding = encoding
         self.hidden = hidden
+        self.preview_img = preview_img
+        self.autocomplete = autocomplete
         self.video_preview = video_preview
-        self.suggest = []
         self.tool_tip = tool_tip
-        self._all_buttons = []
-        self.filetypes = filetypes
-        self.tab_index = -1
-        self._BASE_DIR = Path(__file__).parent
-        self.method = method
+
+        self.current_path = _System.parse_path(current_path or os.getcwd())
         self.current_theme = ctk.get_appearance_mode()
-        self.app = ctk.CTkToplevel()
-        self.app.title(string=title)
-        self.app.geometry(geometry)
-        self.selected_file = ""
+
+        self.selected_file: Optional[str] = ""
         self.selected_objects: list = []
+        self._temp_item: Optional[str] = None
+        self._temp_items: list = []
+        self._all_buttons: list = []
+        self.tab_index = -1
+        self.LOADED = 0
+        self.BATCH = 50
+        self.archivos: list = []
+        self.entire_paths: list = []
+
+        self._BASE_DIR = Path(__file__).parent
         self._load_icons()
-        self._temp_item = None
+
+        self.app = ctk.CTkToplevel()
+        self.app.title(title)
+        self.app.geometry(geometry)
         self.app.protocol("WM_DELETE_WINDOW", self.protocol_windows)
-        self._temp_items = []
-        self.TopSide(master=self.app)
-        self.LeftSide(master=self.app)
-        self.CenterSide(master=self.app)
-        self.app.bind("<Alt-Left>", lambda _: self.btn_retrocess(master=self.app))
+        self.app.bind("<Alt-Left>", lambda _: self._go_back())
+
+        self._build_top_side()
+        self._build_left_side()
+        self._build_center_side()
+
         try:
             self.app.grab_set()
-        except _tkinter.TclError:
+        except TclError:
             pass
 
     def protocol_windows(self):
+        if not self.selected_file and not self.selected_objects:
+            self.selected_file = None
+            self.selected_objects = []
 
         try:
-            self.app.destroy()
-
             self.app.unbind_all("<MouseWheel>")
         except Exception:
             pass
-
-    @staticmethod
-    def _is_image(image: str) -> bool:
         try:
-
-            with Image.open(image) as img:
-
-                img.verify()
-
-            return True
-        except:
-            return False
+            self.app.destroy()
+        except Exception:
+            pass
 
     def _load_icons(self):
         icon_path = self._BASE_DIR / "icons"
 
-        self.iconos = {
-            "folder": ctk.CTkImage(Image.open(icon_path / "folder.png"), size=(40, 40)),
-            "bash": ctk.CTkImage(Image.open(icon_path / "bash.png"), size=(40, 40)),
-            "image": ctk.CTkImage(Image.open(icon_path / "image.png"), size=(40, 40)),
-            "python": ctk.CTkImage(Image.open(icon_path / "python.png"), size=(40, 40)),
-            "text": ctk.CTkImage(Image.open(icon_path / "text.png"), size=(40, 40)),
-            "markdown": ctk.CTkImage(
-                Image.open(icon_path / "markdown.png"), size=(40, 40)
-            ),
-            "javascript": ctk.CTkImage(
-                Image.open(icon_path / "javascript.png"), size=(40, 40)
-            ),
-            "php": ctk.CTkImage(Image.open(icon_path / "php.png"), size=(40, 40)),
-            "html": ctk.CTkImage(Image.open(icon_path / "html.png"), size=(40, 40)),
-            "css": ctk.CTkImage(Image.open(icon_path / "css.png"), size=(40, 40)),
-            "ini": ctk.CTkImage(Image.open(icon_path / "ini.png"), size=(40, 40)),
-            "conf": ctk.CTkImage(Image.open(icon_path / "conf.png"), size=(40, 40)),
-            "exe": ctk.CTkImage(Image.open(icon_path / "exe.png"), size=(40, 40)),
-            "odt": ctk.CTkImage(Image.open(icon_path / "odt.png"), size=(40, 40)),
-            "pdf": ctk.CTkImage(Image.open(icon_path / "pdf.png"), size=(40, 40)),
-            "json": ctk.CTkImage(Image.open(icon_path / "json.png"), size=(40, 40)),
-            "gz": ctk.CTkImage(Image.open(icon_path / "gz.png"), size=(40, 40)),
-            "video": ctk.CTkImage(Image.open(icon_path / "video.png"), size=(40, 40)),
-            "awk": ctk.CTkImage(Image.open(icon_path / "bash.png"), size=(40, 40)),
-            "webp": ctk.CTkImage(Image.open(icon_path / "image.png"), size=(40, 40)),
-            "default": ctk.CTkImage(
-                Image.open(icon_path / "text.png"), size=(40, 40)
-            ),  # ícono por defecto
+        def _icon(name: str) -> ctk.CTkImage:
+            return ctk.CTkImage(Image.open(icon_path / name), size=(40, 40))
+
+        self.icons = {
+            "folder": _icon("folder.png"),
+            "bash": _icon("bash.png"),
+            "image": _icon("image.png"),
+            "python": _icon("python.png"),
+            "text": _icon("text.png"),
+            "markdown": _icon("markdown.png"),
+            "javascript": _icon("javascript.png"),
+            "php": _icon("php.png"),
+            "html": _icon("html.png"),
+            "css": _icon("css.png"),
+            "ini": _icon("ini.png"),
+            "conf": _icon("conf.png"),
+            "exe": _icon("exe.png"),
+            "odt": _icon("odt.png"),
+            "pdf": _icon("pdf.png"),
+            "json": _icon("json.png"),
+            "gz": _icon("gz.png"),
+            "video": _icon("video.png"),
+            "webp": _icon("image.png"),
+            "default": _icon("text.png"),
         }
 
-        self.extensiones_iconos = {
+        self.extension_icons = {
             ".webp": "webp",
             ".awk": "bash",
             ".mp4": "video",
-            ".mvk": "video",
+            ".mkv": "video",
             ".sh": "bash",
             ".zsh": "bash",
             ".py": "python",
@@ -184,234 +184,39 @@ class _DrawApp:
             ".gz": "gz",
         }
 
-    def update_entry(self, ruta) -> None:
+    def _update_entry(self, path: str) -> None:
         self.PathEntry.configure(state="normal")
         self.PathEntry.delete(0, "end")
-        self.PathEntry.insert(0, ruta)
-
-    def fix_name(self, nombre: str, max_len: int = 18) -> str:
-
-        if len(nombre) > max_len:
-
-            return nombre[: max_len - 3]
-        return nombre
-
-    def btn_retrocess(self, master: ctk.CTkToplevel):
-        if self.current_path != os.path.dirname(self.current_path):
-            self.current_path = os.path.dirname(self.current_path)
-            self.update_entry(ruta=self.current_path)
-            self._list_files(master)
-
-    def navigate_to(self, ruta: str, master):
-        try:
-            ruta = os.path.abspath(os.path.expanduser(os.path.expandvars(ruta)))
-
-            # Si es un directorio
-            if os.path.isdir(ruta):
-                if self.method == "askdirectory":
-                    self._temp_item = ruta
-                self.current_path = Path(ruta)
-                self.update_entry(ruta=self.current_path)
-                self._list_files(master)
-                return
-
-            # Si es un archivo y estamos en modo guardar como archivo
-            if self.method in ["asksaveasfile", "asksaveasfilename"]:
-                if os.path.isfile(ruta):
-                    msg = CTkMessagebox(
-                        message="Este archivo existe. ¿Deseas sobreescribirlo?",
-                        icon="warning",
-                        title="Advertencia",
-                        option_1="Yes",
-                        option_2="No",
-                    )
-                    if msg.get() == "No":
-                        return
-                self._temp_item = ruta
-                self.close_app()
-                return
-
-            if self.method == "askopenfile":
-                if not os.path.isfile(ruta):
-
-                    CTkMessagebox(
-                        message="File not found haha!", title="Error", icon="cancel"
-                    )
-                    self.PathEntry.delete(0, ctk.END)
-                    self.PathEntry.insert(0, self.current_path)
-                    return
-
-                self._temp_item = ruta
-                self.update_entry(self._temp_item)
-                return
-
-            if os.path.isfile(ruta):
-                self._temp_item = ruta
-                self.update_entry(self._temp_item)
-                return
-
-            self.PathEntry.delete(0, "end")
-            self.PathEntry.insert(0, str(self.current_path))
-            self.PathEntry.configure(state="normal")
-
-            CTkMessagebox(
-                message="No such file or directory!", title="Error", icon="cancel"
-            )
-            return
-
-        except PermissionError:
-
-            CTkMessagebox(message="Permiso denegado!", title="Error", icon="cancel")
-        except FileNotFoundError:
-
-            CTkMessagebox(message="File Not Found!", title="Error", icon="cancel")
-
-    def close_app(self):
-        if self.method == "asksaveasfilename":
-            if not os.path.isdir(self.PathEntry.get()):
-                self.selected_file = self.PathEntry.get()
-
-        if self._temp_item:
-            self.protocol_windows()
-            self.app.destroy()
-            if self.method == "asksaveasfile":
-                self.selected_file = self._temp_item
-                return
-            elif self.method == "askopenfile":
-                self.selected_file = self._temp_item
-            else:
-                self.selected_file = self._temp_item
-                return
-
-        if len(self._temp_items) >= 1:
-            self.protocol_windows()
-            self.app.destroy()
-            if self.method == "askopenfilenames" or self.method == "askopenfiles":
-                seen = set()
-                self.selected_objects = [
-                    f
-                    for f in self._temp_items
-                    if not os.path.isdir(f) and f not in seen and not seen.add(f)
-                ]
-
-                return
+        self.PathEntry.insert(0, path)
 
     @staticmethod
-    def _is_video(video: str):
+    def _truncate(name: str, max_len: int = 18) -> str:
+        return name[: max_len - 3] if len(name) > max_len else name
 
+    @staticmethod
+    def _is_image(path: str) -> bool:
         try:
+            with Image.open(path) as img:
+                img.verify()
+            return True
+        except Exception:
+            return False
 
-            cap = cv2.VideoCapture(video)
+    @staticmethod
+    def _is_video(path: str) -> bool:
+        try:
+            cap = cv2.VideoCapture(path)
             valid = cap.isOpened()
             cap.release()
             return valid
-        except:
-
+        except Exception:
             return False
 
-    def _autocomplete(self, event):
-
-        if not hasattr(self, "entire_paths"):
-            return "break"
-
-        if not self.entire_paths:
-
-            return "break"
-
-        if not self.archivos:
-            return "break"
-
-        max_index = len(self.archivos)
-
-        if event.keysym == "Up":
-            self.tab_index = (self.tab_index - 1) % max_index
-        else:
-            self.tab_index = (self.tab_index + 1) % max_index
-
-        path = self.entire_paths[self.tab_index]
-        self.PathEntry.delete(0, ctk.END)
-        self.PathEntry.insert(0, path)
-
-        self._temp_item = path
-
-        return "break"
-
-    def TopSide(self, master: ctk.CTkToplevel) -> None:
-        TopBar = ctk.CTkFrame(master=master, height=40, fg_color="transparent")
-        TopBar.pack(side="top", fill="x")
-
-        def btn_exit():
-            msg = CTkMessagebox(
-                message="¿Deseas salir?",
-                title="Salir",
-                option_1="Yes",
-                option_2="No",
-                icon="warning",
-            )
-            if msg.get() == "Yes":
-                self.protocol_windows()
-
-                self.selected_file = None
-                self.selected_objects = []
-                self._temp_item = None
-                self._temp_items = []
-                master.destroy()
-                return
-
-        # Botón Salir
-        ButtonExit = ctk.CTkButton(
-            master=TopBar,
-            text="Exit",
-            font=("Hack Nerd Font", 15),
-            width=70,
-            command=btn_exit,
-            hover_color="red",
-        )
-        ButtonExit.pack(side="left", fill="x")
-
-        # Campo Path
-        self.PathEntry = ctk.CTkEntry(
-            master=TopBar, width=1070, corner_radius=0, insertwidth=0
-        )
-        self.PathEntry.insert(index=0, string=_System.GetPath(str(self.current_path)))
-        self.PathEntry.pack(side="right", fill="y", padx=10, pady=10)
-        self.PathEntry.bind(
-            "<Return>",
-            command=lambda _: self.navigate_to(
-                ruta=self.PathEntry.get(), master=master
-            ),
-        )
-
-        # Botón Retroceso
-        ButtonRetroces = ctk.CTkButton(
-            master=TopBar,
-            text="",
-            font=("Hack Nerd Font", 15),
-            width=70,
-            command=lambda path=self.PathEntry.get(): self.btn_retrocess(master=master),
-        )
-        ButtonRetroces.pack(side="left", fill="x", padx=10, pady=10)
-
-        # Boton de Ok
-        ButtonOk = ctk.CTkButton(
-            master=TopBar,
-            text="Ok",
-            font=("Hack Nerd Font", 15),
-            width=70,
-            command=lambda: self.close_app(),
-        )
-        ButtonOk.pack(side="left", fill="x", padx=10, pady=10)
-
-        if self.autocomplete:
-
-            self.PathEntry.bind("<Down>", lambda event: self._autocomplete(event))
-            self.PathEntry.bind("<Up>", lambda event: self._autocomplete(event))
-            self.PathEntry.bind("<Tab>", lambda event: self._autocomplete(event))
-
-    def _get_video_frame(self, path: str, frame_number: int = 1) -> Image.Image | None:
+    def _get_video_frame(
+        self, path: str, frame_number: int = 10
+    ) -> Optional[Image.Image]:
         if not self._is_video(path):
             return None
-
         try:
             cap = cv2.VideoCapture(path)
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
@@ -420,183 +225,32 @@ class _DrawApp:
             if ret:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 return Image.fromarray(frame)
-        except:
-            return None
+        except Exception:
+            pass
+        return None
 
-    def LeftSide(self, master) -> None:
-
-        # Frame principal
-        LeftSideFrame = ctk.CTkFrame(master=master, width=200)
-        LeftSideFrame.pack(side="left", fill="y", padx=10, pady=10)
-        LeftSideFrame.pack_propagate(False)
-
-        # Primero el HOME del usuario
-        home = os.path.expanduser("~")
-        carpetas = {f"{str(os.getenv('HOME')).replace('/home/', '')}": home}
-
-        # Cargar el archivo user-dirs.dirs
-        dir_file = os.path.join(home, ".config/user-dirs.dirs")
-        pattern = re.compile(r'XDG_\w+_DIR="(.+?)"')
-
-        import platform
-
-        if platform.system() == "Linux":
-            if not os.path.exists(path=dir_file):
-                raise FileNotFoundError(
-                    f"El archivo {dir_file} es importante para la ejecución del programa!"
-                )
-
-            with open(dir_file, "r") as f:
-                for line in f:
-                    if not line.startswith("#") and line.strip():
-                        match = pattern.search(line)
-                        if match:
-                            ruta = os.path.expandvars(match.group(1))
-                            nombre = os.path.basename(os.path.normpath(ruta))
-                            if nombre != f"{os.getenv('USER')}":  # Evitar duplicado
-                                carpetas[nombre] = ruta
-
-        elif platform.system() == "Windows":
-            home = Path.home()
-            win_carpetas = {
-                home.name: str(home),
-                "Desktop": home / "Desktop",
-                "Documents": home / "Documents",
-                "Downloads": home / "Downloads",
-                "Pictures": home / "Pictures",
-                "Music": home / "Music",
-                "Videos": home / "Videos",
-            }
-
-            carpetas = {}
-            carpetas = {k: v for k, v in win_carpetas.items()}
-
-        # Título
-        LabelSide = ctk.CTkLabel(
-            master=LeftSideFrame, text="Lugares", font=("Hack Nerd Font", 15)
-        )
-        LabelSide.pack(side=ctk.TOP, padx=5, pady=5)
-
-        iconos = {
-            os.getenv("USER"): "",  # HOME del usuario
-            "Desktop": "",
-            "Escritorio": "",
-            "Downloads": "",
-            "Descargas": "",
-            "Documents": "",
-            "Documentos": "",
-            "Pictures": "",
-            "Imágenes": "",
-            "Music": "",
-            "Música": "",
-            "Videos": "",
-            "Vídeos": "",
-            "Templates": "",
-            "Plantillas": "",
-            "Public": "",
-            "Público": "",
-        }
-
-        for nombre, ruta in carpetas.items():
-            icono = iconos.get(nombre, "")
-            texto_boton = f"    {icono}  {nombre}"
-            DirectorySide = ctk.CTkButton(
-                master=LeftSideFrame,
-                text=texto_boton,
-                font=("Hack Nerd Font", 14),
-                anchor="w",
-                fg_color="transparent",
-                hover_color="#8da3ae",
-                text_color=(
-                    "#000000" if self.current_theme.lower() == "light" else "#cccccc"
-                ),
-                corner_radius=2,
-                border_width=0,
-                command=lambda r=ruta, n=nombre: self.navigate_to(
-                    ruta=r, master=master
-                ),
+    @staticmethod
+    def _get_info(path: str) -> str:
+        try:
+            st = os.stat(path)
+            owner = find_owner(path)
+            created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_ctime))
+            return (
+                f"File: {os.path.basename(path)}\n"
+                f"Creation: {created}\n"
+                f"Owner: {owner}\n"
+                f"Path: {path}"
             )
-            DirectorySide.pack(fill="x", pady=4)
+        except Exception as e:
+            return f"Error retrieving info: {e}"
 
-    def event_scroll(self):
-
-        canvas = self.CenterSideFrame._parent_canvas
-
-        def _on_mousewheel(event):
-
-            x_root, y_root = event.x_root, event.y_root
-
-            # Coordenadas y tamaño del scrollable frame
-            x1 = self.CenterSideFrame.winfo_rootx()
-            y1 = self.CenterSideFrame.winfo_rooty()
-            x2 = x1 + self.CenterSideFrame.winfo_width()
-            y2 = y1 + self.CenterSideFrame.winfo_height()
-            if x1 <= x_root <= x2 and y1 <= y_root <= y2:
-
-                if event.num == 4:
-                    canvas.yview_scroll(-1, "units")
-                elif event.num == 5:
-                    canvas.yview_scroll(1, "units")
-                else:
-
-                    canvas.yview_scroll(-int(event.delta / 120), "units")
-                self._verificar_scroll(self.app)
-                return "break"
-
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        canvas.bind("<Button-4>", _on_mousewheel)
-        canvas.bind("<Button-5>", _on_mousewheel)
-
-        # Vincular a todos los widgets hijos
-        for widget in canvas.winfo_children():
-            widget.bind("<MouseWheel>", _on_mousewheel)
-            widget.bind("<Button-4>", _on_mousewheel)
-            widget.bind("<Button-5>", _on_mousewheel)
-
-    def CenterSide(self, master: ctk.CTkToplevel) -> None:
-        self.CenterSideFrame = ctk.CTkScrollableFrame(master=master)
-        self.CenterSideFrame.pack(
-            expand=True, side="top", fill="both", padx=10, pady=10
-        )
-
-        self.event_scroll()
-
-        self.content_frame = ctk.CTkFrame(master=self.CenterSideFrame)
-        self.content_frame.pack(side="top", fill="both", expand=True, padx=20, pady=10)
-
-        self._list_files(master=master)
-
-    def __clear__(self):
-
-        for widget in self.content_frame.winfo_children():
-            try:
-                widget.destroy()
-            except (_tkinter.TclError, Exception):
-                pass
-
-    def _handle_click(self, event, r, master, boton, tool_tip=None):
-        if not event.state & 0x0004:
-            self._temp_items.clear()
-            self.selected_objects.clear()
-
-        if event.state & 0x0004:
-
-            if self.method in ["askopenfilenames", "askopenfiles"]:
-                if r not in self._temp_items:
-                    self._temp_items.append(r)
-                boton.configure(fg_color="blue")
-                return
-
-            if boton not in self._all_buttons:
-                self._all_buttons.append(boton)
-
-        else:
-            self._temp_items.clear()
-            if self.method in ["askopenfilenames", "askopenfiles"]:
-                self._temp_items.append(r)
-
-            for btn in self._all_buttons:
-                if btn.winfo_exists():
+    def _reset_selection(self) -> None:
+        self._temp_item = None
+        self._temp_items.clear()
+        self.selected_objects.clear()
+        for btn in self._all_buttons:
+            if btn.winfo_exists():
+                try:
                     btn.configure(
                         fg_color="transparent",
                         hover_color="#8da3ae",
@@ -606,87 +260,373 @@ class _DrawApp:
                             else "#cccccc"
                         ),
                     )
-            if os.path.isdir(r):
-                self.navigate_to(ruta=r, master=master)
-            else:
-                self._temp_items.append(r)
+                except TclError:
+                    pass
+        self._all_buttons.clear()
+
+    def _go_back(self):
+        parent = os.path.dirname(self.current_path)
+        if parent and parent != self.current_path:
+            self.current_path = parent
+            self._update_entry(self.current_path)
+            self._list_files()
+
+    def navigate_to(self, path: str) -> None:
+        try:
+            path = _System.parse_path(path)
+        except (OSError, ValueError):
+            self._update_entry(str(self.current_path))
+            CTkMessagebox(
+                message="Invalid path.",
+                title="Error",
+                icon="cancel",
+            )
+            return
+
+        if os.path.isdir(path):
+            if self.method == "askdirectory":
+                self._temp_item = path
+            self.current_path = path
+            self._update_entry(path)
+            self._list_files()
+            return
+
+        if not os.path.exists(path):
+            self._update_entry(str(self.current_path))
+            CTkMessagebox(
+                message="No such file or directory!",
+                title="Error",
+                icon="cancel",
+            )
+            return
+
+        if self.method in ("asksaveasfile", "asksaveasfilename"):
+            if os.path.isfile(path):
+                msg = CTkMessagebox(
+                    message="This file already exists. Overwrite?",
+                    icon="warning",
+                    title="Warning",
+                    option_1="Yes",
+                    option_2="No",
+                )
+                if msg.get() == "No":
+                    return
+            self._temp_item = path
+            self._close_app()
+            return
+
+        if self.method == "askopenfile":
+            if not os.path.isfile(path):
+                CTkMessagebox(
+                    message="File not found!",
+                    title="Error",
+                    icon="cancel",
+                )
+                self._update_entry(str(self.current_path))
+                return
+            self._temp_item = path
+            self._update_entry(path)
+            return
+
+        if os.path.isfile(path):
+            self._temp_item = path
+            self._update_entry(path)
+            return
+
+        self._update_entry(str(self.current_path))
+        CTkMessagebox(
+            message="Not a regular file.",
+            title="Error",
+            icon="cancel",
+        )
+
+    def _close_app(self):
+        if self.method == "asksaveasfilename":
+            entry_value = self.PathEntry.get().strip()
+            if entry_value and not os.path.isdir(entry_value):
+                self.selected_file = entry_value
+
+        if self._temp_item and _path_is_selectable(self._temp_item):
+            self.selected_file = self._temp_item
+            self.protocol_windows()
+            return
+
+        if self._temp_items:
+            valid = [p for p in self._temp_items if _path_is_selectable(p)]
+            valid = _dedupe_preserving_order(valid)
+
+            if self.method in ("askopenfilenames", "askopenfiles"):
+                self.selected_objects = [p for p in valid if not os.path.isdir(p)]
+                if self.selected_objects:
+                    self.protocol_windows()
+                    return
+
+        self.protocol_windows()
+
+    def _build_top_side(self) -> None:
+        top_bar = ctk.CTkFrame(master=self.app, height=40, fg_color="transparent")
+        top_bar.pack(side="top", fill="x")
+
+        def on_exit():
+            msg = CTkMessagebox(
+                message="Do you want to exit?",
+                title="Exit",
+                option_1="Yes",
+                option_2="No",
+                icon="warning",
+            )
+            if msg.get() == "Yes":
+                self.selected_file = None
+                self.selected_objects = []
+                self._temp_item = None
+                self._temp_items = []
+                self.protocol_windows()
+
+        ctk.CTkButton(
+            master=top_bar,
+            text="Exit",
+            font=("Hack Nerd Font", 15),
+            width=70,
+            command=on_exit,
+            hover_color="red",
+        ).pack(side="left", fill="x")
+
+        self.PathEntry = ctk.CTkEntry(
+            master=top_bar, width=1070, corner_radius=0, insertwidth=0
+        )
+        self.PathEntry.insert(0, _System.get_path(str(self.current_path)))
+        self.PathEntry.pack(side="right", fill="y", padx=10, pady=10)
+        self.PathEntry.bind(
+            "<Return>", lambda _: self.navigate_to(self.PathEntry.get())
+        )
+
+        ctk.CTkButton(
+            master=top_bar,
+            text="",
+            font=("Hack Nerd Font", 15),
+            width=70,
+            command=self._go_back,
+        ).pack(side="left", fill="x", padx=10, pady=10)
+
+        ctk.CTkButton(
+            master=top_bar,
+            text="Ok",
+            font=("Hack Nerd Font", 15),
+            width=70,
+            command=self._close_app,
+        ).pack(side="left", fill="x", padx=10, pady=10)
+
+        if self.autocomplete:
+            for key in ("<Down>", "<Up>", "<Tab>"):
+                self.PathEntry.bind(key, self._autocomplete)
+
+    def _build_left_side(self) -> None:
+        frame = ctk.CTkFrame(master=self.app, width=200)
+        frame.pack(side="left", fill="y", padx=10, pady=10)
+        frame.pack_propagate(False)
+
+        folders = self._get_places()
+
+        ctk.CTkLabel(master=frame, text="Places", font=("Hack Nerd Font", 15)).pack(
+            side=ctk.TOP, padx=5, pady=5
+        )
+
+        icons = {
+            os.getenv("USER"): "",
+            "Desktop": "",
+            "Downloads": "",
+            "Documents": "",
+            "Pictures": "",
+            "Music": "",
+            "Videos": "",
+            "Templates": "",
+            "Public": "",
+        }
+
+        for name, path in folders.items():
+            icon = icons.get(name, "")
+            ctk.CTkButton(
+                master=frame,
+                text=f"    {icon}  {name}",
+                font=("Hack Nerd Font", 14),
+                anchor="w",
+                fg_color="transparent",
+                hover_color="#8da3ae",
+                text_color=(
+                    "#000000" if self.current_theme.lower() == "light" else "#cccccc"
+                ),
+                corner_radius=2,
+                border_width=0,
+                command=lambda p=path: self.navigate_to(p),
+            ).pack(fill="x", pady=4)
 
     @staticmethod
-    def _get_info(ruta: str) -> str:
-        try:
-            st = os.stat(ruta)
+    def _get_places() -> dict:
+        home = os.path.expanduser("~")
+        system = platform.system()
 
-            # Usuario propietario
-            owner = find_owner(ruta)
+        if system == "Windows":
+            home_path = Path(home)
+            candidates = {
+                home_path.name: home_path,
+                "Desktop": home_path / "Desktop",
+                "Documents": home_path / "Documents",
+                "Downloads": home_path / "Downloads",
+                "Pictures": home_path / "Pictures",
+                "Music": home_path / "Music",
+                "Videos": home_path / "Videos",
+            }
+            return {
+                name: str(path) for name, path in candidates.items() if path.exists()
+            } or {home_path.name: str(home_path)}
 
-            # Permisos (ej: -rw-r--r--)
-            # permisos = get_permissions(ruta)
+        folders = {os.path.basename(home) or "Home": home}
 
-            # Fecha legible
-            fecha = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_ctime))
+        dir_file = os.path.join(home, ".config", "user-dirs.dirs")
+        pattern = re.compile(r'XDG_\w+_DIR="(.+?)"')
 
-            return f"""File: {os.path.basename(ruta)}
-    creation: {fecha}
-    owner: {owner}
-    path: {ruta}
-                    """
-        except Exception as e:
-            return f"Error al obtener info: {e}"
+        if os.path.isfile(dir_file):
+            try:
+                with open(dir_file, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        match = pattern.search(line)
+                        if not match:
+                            continue
+                        raw = match.group(1)
+                        path = os.path.expandvars(os.path.expanduser(raw))
+                        if not os.path.isdir(path):
+                            continue
+                        name = os.path.basename(os.path.normpath(path))
+                        if name and name != os.path.basename(home):
+                            folders.setdefault(name, path)
+            except OSError:
+                pass
 
-    def _cargar_archivos(self, master: Any, cantidad: int):
-        columnas = 5
-        row = self.LOADED // columnas
-        col = self.LOADED % columnas
-        ruta = self.current_path
+        fallbacks = {
+            "Desktop": os.path.join(home, "Desktop"),
+            "Documents": os.path.join(home, "Documents"),
+            "Downloads": os.path.join(home, "Downloads"),
+            "Pictures": os.path.join(home, "Pictures"),
+            "Music": os.path.join(home, "Music"),
+            "Videos": os.path.join(home, "Videos"),
+            "Public": os.path.join(home, "Public"),
+            "Templates": os.path.join(home, "Templates"),
+        }
+        for name, path in fallbacks.items():
+            if name not in folders and os.path.isdir(path):
+                folders[name] = path
 
-        while self.LOADED < len(self.archivos) and cantidad > 0:
+        return folders
 
-            archivo = self.archivos[self.LOADED]
-            ruta_completa = os.path.join(ruta, archivo)
+    def _build_center_side(self) -> None:
+        self.CenterSideFrame = ctk.CTkScrollableFrame(master=self.app)
+        self.CenterSideFrame.pack(
+            expand=True, side="top", fill="both", padx=10, pady=10
+        )
 
-            if self.method == "askdirectory" and os.path.isfile(ruta_completa):
+        self._bind_scroll()
+
+        self.content_frame = ctk.CTkFrame(master=self.CenterSideFrame)
+        self.content_frame.pack(side="top", fill="both", expand=True, padx=20, pady=10)
+
+        self._list_files()
+
+    def _bind_scroll(self):
+        canvas = self.CenterSideFrame._parent_canvas
+
+        def _on_mousewheel(event):
+            x1 = self.CenterSideFrame.winfo_rootx()
+            y1 = self.CenterSideFrame.winfo_rooty()
+            x2 = x1 + self.CenterSideFrame.winfo_width()
+            y2 = y1 + self.CenterSideFrame.winfo_height()
+
+            if not (x1 <= event.x_root <= x2 and y1 <= event.y_root <= y2):
+                return
+
+            if event.num == 4:
+                canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                canvas.yview_scroll(1, "units")
+            else:
+                canvas.yview_scroll(-int(event.delta / 120), "units")
+            self._check_scroll()
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        canvas.bind("<Button-4>", _on_mousewheel)
+        canvas.bind("<Button-5>", _on_mousewheel)
+
+        for widget in canvas.winfo_children():
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            widget.bind("<Button-4>", _on_mousewheel)
+            widget.bind("<Button-5>", _on_mousewheel)
+
+    def _clear_content(self):
+        for widget in self.content_frame.winfo_children():
+            try:
+                widget.destroy()
+            except Exception:
+                pass
+
+    def _handle_click(self, event, path: str, button: ctk.CTkButton):
+        ctrl_pressed = bool(event.state & 0x0004)
+
+        if not ctrl_pressed:
+            self._reset_selection()
+            if os.path.isdir(path):
+                self.navigate_to(path)
+                return
+            self._temp_item = path
+            button.configure(fg_color="blue")
+            self._all_buttons.append(button)
+            return
+
+        if self.method not in ("askopenfilenames", "askopenfiles"):
+            return
+
+        if path in self._temp_items:
+            self._temp_items.remove(path)
+            button.configure(
+                fg_color="transparent",
+                hover_color="#8da3ae",
+                text_color=(
+                    "#000000" if self.current_theme.lower() == "light" else "#cccccc"
+                ),
+            )
+            if button in self._all_buttons:
+                self._all_buttons.remove(button)
+        else:
+            self._temp_items.append(path)
+            button.configure(fg_color="blue")
+            if button not in self._all_buttons:
+                self._all_buttons.append(button)
+
+    def _load_batch(self, count: int):
+        columns = 5
+        row = self.LOADED // columns
+        col = self.LOADED % columns
+        base = self.current_path
+
+        while self.LOADED < len(self.archivos) and count > 0:
+            name = self.archivos[self.LOADED]
+            full_path = os.path.join(base, name)
+
+            if self.method == "askdirectory" and os.path.isfile(full_path):
                 self.LOADED += 1
                 continue
 
-            # Obtener ícono según tipo de archivo
-            if os.path.isdir(ruta_completa):
-                icono = self.iconos["folder"]
-            else:
-                if self.preview_img and self._is_image(ruta_completa):
-                    try:
-                        img = Image.open(ruta_completa)
-                        img.thumbnail((32, 32))
-                        icono = ctk.CTkImage(
-                            light_image=img, dark_image=img, size=(32, 32)
-                        )
-                    except:
-                        icono = self.iconos.get("image", self.iconos["default"])
-                elif self.video_preview and self._is_video(ruta_completa):
-                    frame = self._get_video_frame(ruta_completa, frame_number=10)
-                    if frame:
-                        frame.thumbnail((32, 32))
-                        icono = ctk.CTkImage(
-                            light_image=frame, dark_image=frame, size=(32, 32)
-                        )
-                    else:
-                        icono = self.iconos.get("video", self.iconos["default"])
-                else:
-                    ext = os.path.splitext(archivo)[1].lower()
-                    icon_key = self.extensiones_iconos.get(ext, "default")
-                    icono = self.iconos.get(icon_key, self.iconos["default"])
-
-            archivo_fixeado = self.fix_name(nombre=archivo)
+            icon = self._get_icon(full_path, name)
 
             command = None
-            if self.method not in ["askopenfilenames"]:
-                command = lambda r=ruta_completa: self.navigate_to(
-                    ruta=r, master=master
-                )
+            if self.method not in ("askopenfilenames", "askopenfiles"):
+                command = lambda p=full_path: self.navigate_to(p)
 
-            boton = ctk.CTkButton(
+            button = ctk.CTkButton(
                 master=self.content_frame,
-                text=archivo_fixeado,
-                image=icono,
+                text=self._truncate(name),
+                image=icon,
                 compound="left",
                 width=180,
                 height=60,
@@ -700,76 +640,125 @@ class _DrawApp:
             )
 
             if self.tool_tip:
-                _CustomToolTip(widget=boton, message=self._get_info(ruta_completa))
+                _CustomToolTip(widget=button, message=self._get_info(full_path))
 
-            if self.method in ["askopenfilenames", "askopenfiles"]:
-                boton.bind(
+            if self.method in ("askopenfilenames", "askopenfiles"):
+                button.bind(
                     "<Button-1>",
-                    lambda event, r=ruta_completa, b=boton: self._handle_click(
-                        event, r, master, b
+                    lambda event, p=full_path, b=button: self._handle_click(
+                        event, p, b
                     ),
                 )
 
-            boton.grid(row=row, column=col, padx=10, pady=10)
+            button.grid(row=row, column=col, padx=10, pady=10)
+
             col += 1
-            if col >= columnas:
+            if col >= columns:
                 col = 0
                 row += 1
 
             self.LOADED += 1
-            cantidad -= 1
+            count -= 1
 
-    def _verificar_scroll(self, master):
+    def _get_icon(self, full_path: str, name: str) -> ctk.CTkImage:
+        if os.path.isdir(full_path):
+            return self.icons["folder"]
+
+        if self.preview_img and self._is_image(full_path):
+            try:
+                img = Image.open(full_path)
+                img.thumbnail((32, 32))
+                return ctk.CTkImage(light_image=img, dark_image=img, size=(32, 32))
+            except Exception:
+                return self.icons.get("image", self.icons["default"])
+
+        if self.video_preview and self._is_video(full_path):
+            frame = self._get_video_frame(full_path, frame_number=10)
+            if frame:
+                frame.thumbnail((32, 32))
+                return ctk.CTkImage(light_image=frame, dark_image=frame, size=(32, 32))
+            return self.icons.get("video", self.icons["default"])
+
+        ext = os.path.splitext(name)[1].lower()
+        key = self.extension_icons.get(ext, "default")
+        return self.icons.get(key, self.icons["default"])
+
+    def _check_scroll(self):
         try:
             canvas = self.CenterSideFrame._parent_canvas
-            yview = canvas.yview()
-            if yview[1] > 0.98 and self.LOADED < len(self.archivos):
-                self._cargar_archivos(master, cantidad=5)
-        except _tkinter.TclError:
+            if canvas.yview()[1] > 0.98 and self.LOADED < len(self.archivos):
+                self._load_batch(5)
+        except TclError:
             pass
 
-    def _list_files(self, master: ctk.CTkToplevel) -> None:
+    def _list_files(self) -> None:
         self.LOADED = 0
-        self.BATCH = 50
-        self.selected_objects.clear()
-        self._all_buttons.clear()
+        self._reset_selection()
 
-        self.CenterSideFrame._parent_canvas.yview_moveto(0)
-        self.__clear__()
+        try:
+            self.CenterSideFrame._parent_canvas.yview_moveto(0)
+        except Exception:
+            pass
 
-        ruta_path = self.current_path
+        self._clear_content()
+
+        try:
+            entries = list(os.scandir(self.current_path))
+        except PermissionError:
+            CTkMessagebox(message="Permission denied!", title="Error", icon="cancel")
+            return
+        except OSError as e:
+            CTkMessagebox(
+                message=f"Cannot read directory:\n{e}",
+                title="Error",
+                icon="cancel",
+            )
+            return
 
         self.archivos = [
             f.name
-            for f in os.scandir(ruta_path)
-            if (
-                (f.is_dir() or (self.method != "askdirectory" and f.is_file()))
-                and (self.hidden or not f.name.startswith("."))
-                and (
-                    f.is_dir()
-                    or not self.filetypes
-                    or any(f.name.endswith(ext) for ext in self.filetypes)
-                )
+            for f in entries
+            if (f.is_dir() or (self.method != "askdirectory" and f.is_file()))
+            and (self.hidden or not f.name.startswith("."))
+            and (
+                f.is_dir()
+                or not self.filetypes
+                or any(f.name.endswith(ext) for ext in self.filetypes)
             )
         ]
 
         if not self.archivos:
+            self.entire_paths = []
             return
 
         if self.autocomplete:
-
             self.entire_paths = [
                 os.path.join(self.current_path, f) for f in self.archivos
             ]
 
-            if not self.entire_paths:
-                self.entire_paths = None
+        self._load_batch(self.BATCH)
 
-        self._cargar_archivos(master, cantidad=self.BATCH)
+    def _autocomplete(self, event) -> str:
+        paths = getattr(self, "entire_paths", None) or []
+        if not paths or not self.archivos:
+            return "break"
+
+        n = len(paths)
+        if self.tab_index >= n:
+            self.tab_index = -1
+
+        if event.keysym == "Up":
+            self.tab_index = (self.tab_index - 1) % n
+        else:
+            self.tab_index = (self.tab_index + 1) % n
+
+        path = paths[self.tab_index]
+        self._update_entry(path)
+        self._temp_item = path
+        return "break"
 
 
 class _MiniDialog:
-
     def __init__(
         self,
         method: str,
@@ -781,207 +770,81 @@ class _MiniDialog:
         geometry: str = "500x400",
         title: str = "CTkFileDialog",
     ):
-
-        self.master = ctk.CTkToplevel()
-        self.master.geometry(geometry_string=geometry)
-        self.master.title(title)
-        self._extra_method = _extra_method
-        self.tab_index = -1
         self.method = method
+        self._extra_method = _extra_method
         self.hidden = hidden
         self.filetypes = filetypes
         self.autocomplete = autocomplete
-        self.initial_dir = initial_dir
+        self.tab_index = -1
+        self.max_index = 0
 
-        if not self.initial_dir:
-            self.initial_dir = os.getcwd()
-        else:
-            self.initial_dir = _System().GetPath(path=self.initial_dir)
+        resolved = _System.parse_path(initial_dir or os.getcwd())
+        if not os.path.isdir(resolved):
+            resolved = os.path.expanduser("~")
+        self.initial_dir = resolved
 
-        self.selected_path = ""
-        self.selected_paths = []
-        self.selected_items = []
-        self.selected_item = ""
+        self.selected_path: Optional[str] = None
+        self.selected_paths: Optional[list] = None
+        self.selected_item: Optional[str] = None
+        self._finalize = False
 
-        # Load images
         self._PATH = os.path.dirname(os.path.realpath(__file__))
-
         self.folder_image = self._load_image(
-            image=os.path.join(self._PATH, "icons/_IconsMini/folder.png")
+            os.path.join(self._PATH, "icons/_IconsMini/folder.png")
         )
-
         self.file_image = self._load_image(
-            image=os.path.join(self._PATH, "icons/_IconsMini/file.png")
+            os.path.join(self._PATH, "icons/_IconsMini/file.png")
         )
 
-        self._TopSide()
-
-        self._CenterSide()
-
-        self.list_files()
+        self.master = ctk.CTkToplevel()
+        self.master.geometry(geometry)
+        self.master.title(title)
         self.master.bind("<Alt-Left>", lambda _: self._up())
 
+        self._build_top_side()
+        self._build_center_side()
+        self.list_files()
+
         self.master.wait_visibility()
-        self.master.grab_set()
+        try:
+            self.master.grab_set()
+        except TclError:
+            pass
         self.master.wait_window()
 
-    def _get_path(self):
-
-        return os.path.abspath(os.path.expandvars(os.path.expanduser(self.initial_dir)))
-
-    def _TopSide(self):
-
+    def _build_top_side(self):
         self.frame = ctk.CTkFrame(self.master)
         self.frame.pack(fill=ctk.BOTH, expand=True)
 
-        self.path_frame = ctk.CTkFrame(self.frame)
-        self.path_frame.pack(fill=ctk.X, padx=10, pady=10)
+        path_frame = ctk.CTkFrame(self.frame)
+        path_frame.pack(fill=ctk.X, padx=10, pady=10)
 
-        self.path_entry = ctk.CTkEntry(
-            self.path_frame,
-        )
+        self.path_entry = ctk.CTkEntry(path_frame)
         self.path_entry.pack(expand=True, fill=ctk.X, side=ctk.LEFT, padx=10, pady=10)
         self.path_entry.bind("<Return>", lambda _: self._on_enter_path())
-        self.path_entry.insert(0, self._get_path())
+        self.path_entry.insert(0, self.initial_dir)
 
         if self.autocomplete:
-            for bind in ["<Tab>", "<Down>", "<Up>"]:
-                self.path_entry.bind(bind, self._autocomplete)
+            for key in ("<Tab>", "<Down>", "<Up>"):
+                self.path_entry.bind(key, self._autocomplete)
 
-        self.up_btn = ctk.CTkButton(
-            self.path_frame, text="↑", width=30, command=self._up
+        ctk.CTkButton(path_frame, text="↑", width=30, command=self._up).pack(
+            side=ctk.RIGHT, padx=10, pady=10
         )
 
-        self.up_btn.pack(side=ctk.RIGHT, padx=10, pady=10)
         btn_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
         btn_frame.pack(side=ctk.BOTTOM, fill=ctk.X, padx=10, pady=10)
 
-        ok_btn = ctk.CTkButton(btn_frame, text="OK", command=self._on_select)
-        ok_btn.pack(side=ctk.RIGHT)
-
+        ctk.CTkButton(btn_frame, text="OK", command=self._on_select).pack(
+            side=ctk.RIGHT
+        )
         ctk.CTkButton(btn_frame, text="Cancel", command=self._on_cancel).pack(
             side=ctk.RIGHT, padx=10
         )
 
-    def list_files(self):
-        ruta_path = os.path.abspath(
-            os.path.expanduser(os.path.expandvars(self.path_entry.get()))
-        )
-        if os.path.isfile(ruta_path):
-            return
-        try:
-
-            try:
-                for item in self.tree.get_children():
-                    self.tree.delete(item)
-            except TclError:
-                return
-
-            self.archivos = {"name": [], "path": []}
-
-            archivos_filtrados = []
-
-            for f in os.scandir(ruta_path):
-                if (
-                    (f.is_dir() or (self.method != "askdirectory" and f.is_file()))
-                    and (self.hidden or not f.name.startswith("."))
-                    and (
-                        f.is_dir()
-                        or not self.filetypes
-                        or any(f.name.endswith(ext) for ext in self.filetypes)
-                    )
-                ):
-                    archivos_filtrados.append(f)
-                    self.archivos["name"].append(f.name)
-                    self.archivos["path"].append(f.path)
-
-            archivos_ordenados = sorted(
-                archivos_filtrados, key=lambda f: (not f.is_dir(), f.name.lower())
-            )
-
-            self.update_entry(path=ruta_path)
-
-            for f in archivos_ordenados:
-                icon = self.folder_image if f.is_dir() else self.file_image
-                self.tree.insert("", tk.END, text=f.name, image=icon)
-
-            if self.autocomplete:
-                self.absolute_paths = [f.path for f in archivos_ordenados]
-
-        except PermissionError:
-            CTkMessagebox(message="Permision Denied!", title="Error", icon="cancel")
-            self._on_cancel(destroy=False)
-        else:
-
-            if self.autocomplete:
-
-                self.max_index = len(self.archivos["name"])
-
-    def update_entry(self, path):
-        self.path_entry.configure(state="normal")
-        self.path_entry.delete(0, ctk.END)
-        self.path_entry.insert(0, path)
-
-    def _autocomplete(self, event: tk.Event):
-
-        if not self.archivos["name"] or not hasattr(self, "max_index"):
-            return "break"
-
-        if event.keysym == "Up":
-            self.tab_index = (self.tab_index - 1) % self.max_index
-        else:
-            self.tab_index = (self.tab_index + 1) % self.max_index
-
-        path = self.absolute_paths[self.tab_index]
-
-        self.path_entry.delete(0, ctk.END)
-        self.path_entry.insert(0, path)
-
-        item_id = self.tree.get_children()[self.tab_index]
-        self.tree.focus(item_id)
-        self.tree.selection_set(item_id)
-        self.tree.see(item_id)
-
-        self.selected_item = path
-        return "break"
-
-    def _on_enter_path(self):
-        path = os.path.abspath(
-            os.path.expanduser(os.path.expandvars(self.path_entry.get()))
-        )
-
-        if os.path.isdir(path):
-            self.initial_dir = path
-            self.list_files()
-        else:
-            if os.path.isfile(path):
-                return
-
-            self.path_entry.configure(state="normal")
-
-            if not os.path.exists(path=path):
-
-                self._on_cancel(destroy=False)
-                self.update_entry(path=self.initial_dir)
-                CTkMessagebox(
-                    title="Error", icon="cancel", message="No such file or directory!"
-                )
-
-            return ""
-
-    def _on_cancel(self, destroy: bool = True):
-        self.selected_path = None
-        self.selected_item = None
-
-        self.selected_paths = None
-        self.selected_items = None
-        if destroy:
-            self.master.destroy()
-        return
-
-    def _CenterSide(self):
-        self.tree_frame = ctk.CTkFrame(self.frame)
-        self.tree_frame.pack(fill=ctk.BOTH, expand=True, padx=10, pady=5)
+    def _build_center_side(self):
+        tree_frame = ctk.CTkFrame(self.frame)
+        tree_frame.pack(fill=ctk.BOTH, expand=True, padx=10, pady=5)
 
         style = ttk.Style()
         style.theme_use("clam")
@@ -1001,7 +864,7 @@ class _MiniDialog:
                 background=[("selected", "#444444")],
                 foreground=[("selected", "#FFFFFF")],
             )
-        else:  # Light mode
+        else:
             style.configure(
                 "Treeview",
                 background="#FFFFFF",
@@ -1015,108 +878,280 @@ class _MiniDialog:
                 background=[("selected", "#E0E0E0")],
                 foreground=[("selected", "#000000")],
             )
-        self.tree = ttk.Treeview(
-            self.tree_frame,
-            show="tree",
-            selectmode=(
-                "extended"
-                if self.method in ["askopenfilenames", "askopenfiles"]
-                else "browse"
-            ),
+
+        select_mode = (
+            "extended"
+            if self.method in ("askopenfilenames", "askopenfiles")
+            else "browse"
         )
+        self.tree = ttk.Treeview(tree_frame, show="tree", selectmode=select_mode)
         self.tree.bind("<Double-1>", self._on_click)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-    def _load_image(self, image: str) -> tk.PhotoImage:
-
+    @staticmethod
+    def _load_image(image: str) -> tk.PhotoImage:
         return tk.PhotoImage(file=image)
 
+    def list_files(self):
+        raw = self.path_entry.get().strip()
+        path = _System.parse_path(raw) if raw else self.initial_dir
+
+        if os.path.isfile(path):
+            return
+
+        if not os.path.isdir(path):
+            fallback = os.path.expanduser("~")
+            if os.path.isdir(fallback) and fallback != path:
+                self.initial_dir = fallback
+                self.update_entry(fallback)
+                return self.list_files()
+
+            CTkMessagebox(
+                message="Directory not found!",
+                title="Error",
+                icon="cancel",
+            )
+            self.update_entry(self.initial_dir)
+            return
+
+        try:
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+        except TclError:
+            return
+
+        try:
+            entries = list(os.scandir(path))
+        except PermissionError:
+            CTkMessagebox(
+                message="Permission denied!",
+                title="Error",
+                icon="cancel",
+            )
+            self.update_entry(self.initial_dir)
+            return
+        except OSError as e:
+            CTkMessagebox(
+                message=f"Cannot read directory:\n{e}",
+                title="Error",
+                icon="cancel",
+            )
+            self.update_entry(self.initial_dir)
+            return
+
+        filtered = [
+            f
+            for f in entries
+            if (f.is_dir() or (self.method != "askdirectory" and f.is_file()))
+            and (self.hidden or not f.name.startswith("."))
+            and (
+                f.is_dir()
+                or not self.filetypes
+                or any(f.name.endswith(ext) for ext in self.filetypes)
+            )
+        ]
+        ordered = sorted(filtered, key=lambda f: (not f.is_dir(), f.name.lower()))
+
+        self.initial_dir = path
+        self.update_entry(path)
+
+        for f in ordered:
+            icon = self.folder_image if f.is_dir() else self.file_image
+            self.tree.insert("", tk.END, text=f.name, image=icon)
+
+        if self.autocomplete:
+            self.absolute_paths = [f.path for f in ordered]
+            self.max_index = len(self.absolute_paths)
+            self.tab_index = -1
+        else:
+            self.absolute_paths = []
+            self.max_index = 0
+
+    def update_entry(self, path: str):
+        self.path_entry.configure(state="normal")
+        self.path_entry.delete(0, ctk.END)
+        self.path_entry.insert(0, path)
+
+    def _autocomplete(self, event) -> str:
+        paths = getattr(self, "absolute_paths", None) or []
+        if not paths or not self.max_index:
+            return "break"
+
+        n = len(paths)
+        if self.tab_index >= n:
+            self.tab_index = -1
+
+        if event.keysym == "Up":
+            self.tab_index = (self.tab_index - 1) % n
+        else:
+            self.tab_index = (self.tab_index + 1) % n
+
+        path = paths[self.tab_index]
+        self.path_entry.delete(0, ctk.END)
+        self.path_entry.insert(0, path)
+
+        item_id = self.tree.get_children()[self.tab_index]
+        self.tree.focus(item_id)
+        self.tree.selection_set(item_id)
+        self.tree.see(item_id)
+
+        self.selected_item = path
+        return "break"
+
+    def _on_enter_path(self):
+        raw = self.path_entry.get().strip()
+        if not raw:
+            self.update_entry(self.initial_dir)
+            return
+
+        try:
+            path = _System.parse_path(raw)
+        except (OSError, ValueError):
+            self.update_entry(self.initial_dir)
+            CTkMessagebox(message="Invalid path.", title="Error", icon="cancel")
+            return
+
+        if os.path.isdir(path):
+            self.initial_dir = path
+            self.list_files()
+            return
+
+        if os.path.isfile(path):
+            self.selected_item = path
+            return
+
+        self.update_entry(self.initial_dir)
+        CTkMessagebox(
+            title="Error",
+            icon="cancel",
+            message="No such file or directory!",
+        )
+
+    def _on_cancel(self, destroy: bool = True):
+        self.selected_path = None
+        self.selected_paths = None
+        self.selected_item = None
+        self._finalize = False
+        if destroy:
+            self.master.destroy()
+
     def _on_select(self):
-
-        path = self.path_entry.get().strip() if hasattr(self, "path_entry") else ""
-
+        path = self.path_entry.get().strip()
         if path:
-            path = os.path.abspath(os.path.expandvars(os.path.expanduser(path)))
-            if not os.path.dirname(path):
-                path = os.path.join(self.initial_dir, path)
+            path = _System.parse_path(path)
+            if _path_is_selectable(path):
+                if self.method == "askdirectory" and os.path.isdir(path):
+                    self.selected_path = path
+                    self._finalize = True
+                    self.master.destroy()
+                    return
+                if self.method in (
+                    "askopenfilename",
+                    "askopenfile",
+                ) and os.path.isfile(path):
+                    self.selected_path = path
+                    self._finalize = True
+                    self.master.destroy()
+                    return
 
-        if self.method in ["asksaveasfile", "asksaveasfilename"]:
+        if self.method in ("asksaveasfile", "asksaveasfilename"):
             if not path or os.path.isdir(path):
                 return
-
+            parent = os.path.dirname(path) or "."
+            if not os.path.isdir(parent):
+                CTkMessagebox(
+                    message="Parent directory does not exist.",
+                    title="Error",
+                    icon="cancel",
+                )
+                return
             if os.path.exists(path) and self._extra_method != "askopenfile":
                 opts = CTkMessagebox(
-                    message="This file exists now! Do you wanna rescribe?",
-                    title="Error",
+                    message="This file already exists. Overwrite?",
+                    title="Warning",
                     icon="warning",
                     option_1="Yes",
                     option_2="No",
                 )
                 if opts.get() == "No":
                     return
-
             self.selected_path = path
+            self._finalize = True
             self.master.destroy()
             return
 
-        elif self.method in ["askopenfiles", "askopenfilenames"]:
-            selected_items = self.tree.selection()
-            selected_paths = [
+        if self.method in ("askopenfiles", "askopenfilenames"):
+            if not self.absolute_paths:
+                return
+            selected = self.tree.selection()
+            paths = [
                 self.absolute_paths[self.tree.index(item)]
-                for item in selected_items
-                if os.path.isfile(self.absolute_paths[self.tree.index(item)])
+                for item in selected
+                if 0 <= self.tree.index(item) < len(self.absolute_paths)
+                and os.path.isfile(self.absolute_paths[self.tree.index(item)])
             ]
-
-            if selected_paths:
-                self.selected_paths = selected_paths
+            paths = _dedupe_preserving_order(paths)
+            if paths:
+                self.selected_paths = paths
+                self._finalize = True
                 self.master.destroy()
             return
 
-        elif self.method in ["askopenfilename", "askopenfile", "askdirectory"]:
+        if self.method in ("askopenfilename", "askopenfile", "askdirectory"):
             if not self.selected_item:
                 return
-
-            if self.method == "askdirectory" and os.path.isdir(self.selected_item):
-                self.selected_path = self.selected_item
-                self.master.destroy()
+            if not _path_is_selectable(self.selected_item):
+                CTkMessagebox(
+                    message="Path no longer exists.",
+                    title="Error",
+                    icon="cancel",
+                )
                 return
-
-            elif self.method in ["askopenfilename", "askopenfile"] and os.path.isfile(
-                self.selected_item
-            ):
-                self.selected_path = self.selected_item
-                self.master.destroy()
-                return
+            if self.method == "askdirectory":
+                if not os.path.isdir(self.selected_item):
+                    return
+            else:
+                if not os.path.isfile(self.selected_item):
+                    return
+            self.selected_path = self.selected_item
+            self._finalize = True
+            self.master.destroy()
 
     def _on_click(self, event=None):
-        selected_item = self.tree.focus()
-        items = self.tree.get_children()
-
-        if not selected_item:
+        selected = self.tree.focus()
+        if not selected:
             return
 
-        idx = items.index(selected_item)
-        self.selected_item = self.absolute_paths[idx]
+        items = self.tree.get_children()
+        if selected not in items:
+            return
 
-        if os.path.isdir(self.selected_item):
-            self.initial_dir = self.selected_item
-            self.path_entry.delete(0, ctk.END)
-            self.path_entry.insert(0, self.selected_item)
+        idx = items.index(selected)
+        if idx >= len(self.absolute_paths):
+            return
+
+        target = self.absolute_paths[idx]
+        self.selected_item = target
+
+        if os.path.isdir(target):
+            self.initial_dir = target
+            self.update_entry(target)
             self.list_files()
             return
 
-        # Si es archivo:
-        self.path_entry.delete(0, ctk.END)
-        self.path_entry.insert(0, self.selected_item)
+        self.update_entry(target)
 
     def _up(self):
-        current_path = os.path.abspath(
-            os.path.expandvars(os.path.expanduser(self.initial_dir))
-        )
+        current = _System.parse_path(self.initial_dir)
+        parent = os.path.dirname(current)
 
-        self.initial_dir = os.path.dirname(current_path)
+        if not parent or parent == current:
+            return
 
-        self.path_entry.delete(0, ctk.END)
-        self.path_entry.insert(0, self.initial_dir)
+        if not os.path.isdir(parent):
+            self.initial_dir = os.path.expanduser("~")
+        else:
+            self.initial_dir = parent
 
+        self.update_entry(self.initial_dir)
         self.list_files()

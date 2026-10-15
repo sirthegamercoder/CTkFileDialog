@@ -2,6 +2,7 @@ import os
 import platform
 import ctypes
 from pathlib import Path
+from ctypes import wintypes
 
 
 def find_owner(path) -> str:
@@ -10,8 +11,7 @@ def find_owner(path) -> str:
 
     if system == "Windows":
         return _get_windows_owner(path)
-    else:
-        return _get_unix_owner(path)
+    return _get_unix_owner(path)
 
 
 def _get_unix_owner(path: str) -> str:
@@ -23,9 +23,6 @@ def _get_unix_owner(path: str) -> str:
 
 
 def _get_windows_owner(path: str) -> str:
-    import ctypes
-    from ctypes import wintypes
-
     GetNamedSecurityInfoW = ctypes.windll.advapi32.GetNamedSecurityInfoW
     LookupAccountSidW = ctypes.windll.advapi32.LookupAccountSidW
     LocalFree = ctypes.windll.kernel32.LocalFree
