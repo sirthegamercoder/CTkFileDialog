@@ -2,9 +2,6 @@
 
 <h3 align="center">A modern and fully customizable File Dialog for CustomTkinter — a must-have extension pack!</h3>
 
-> [!WARNING]
-> Unfortunately parameters like video_preview or preview_img, and tooltip are not compatible with the mini dialog and will not be applied.
-
 ## 🔧 About This Fork
 
 This is a rewritten fork (by [sirthegamercoder](https://github.com/sirthegamercoder)), this fork is based on the original repository, which is no longer maintained, so it aims to carry on the legacy of the original repository.
@@ -208,22 +205,6 @@ app.mainloop()
 
 </div>
 
----
-
-## 🌙 Dark Mode Preview
-
-<p align="center">
-  <img src="images/NormalDialogDark.png" width="80%">
-</p>
-
-## ☀️ Light Mode Preview
-
-<p align="center">
-  <img src="images/NormalDialogLight.png" width="80%">
-</p>
-
----
-
 ## Package constants 
 
 This module has constants that can be used outside or inside the dialog, they are used to obtain paths like /home/user or /home/user/.config/
@@ -265,28 +246,6 @@ root.mainloop()
 
 </div>
 
---- 
-
-## Mini Dialog 
-
-This is a parameter of the file dialog, but it's more powerful than the default one. As I mentioned earlier, it doesn't support parameters like tooltip, preview_img, or video_preview.
-
-## 🌙 Dark Mode Preview
-
-<p align="center">
-  <img src="images/MiniDialogDark.png" width="80%">
-</p>
-
-## ☀️ Light Mode Preview
-
-<p align="center">
-  <img src="images/MiniDialogLight.png" width="80%">
-</p>
-
-The mini design wasn't created by me; it was created by this [user](https://github.com/limafresh), and all credit goes to him. I also want to thank him for creating that design in advance.
-
----
-
 ## 👨‍💻 Under Development
 
 This tool is actively under development.  
@@ -298,5 +257,5 @@ If you have any ideas, bugs, or requests — feel free to contribute!
 
 👉 [GitHub Repo](https://github.com/sirthegamercoder/CTkFileDialog)
 
-<h2 align="center"> This tool is under development, I hope you like it! </h2>
+<h2 align="center"> I hope you like it! </h2>
 
