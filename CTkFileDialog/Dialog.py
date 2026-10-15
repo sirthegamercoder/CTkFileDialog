@@ -385,7 +385,7 @@ class _DrawApp:
         ctk.CTkButton(
             master=top_bar,
             text="Exit",
-            font=("Hack Nerd Font", 15),
+            font=("Segoe UI", 15),
             width=70,
             command=on_exit,
             hover_color="red",
@@ -402,8 +402,8 @@ class _DrawApp:
 
         ctk.CTkButton(
             master=top_bar,
-            text="",
-            font=("Hack Nerd Font", 15),
+            text="←",
+            font=("Segoe UI", 15),
             width=70,
             command=self._go_back,
         ).pack(side="left", fill="x", padx=10, pady=10)
@@ -411,7 +411,7 @@ class _DrawApp:
         ctk.CTkButton(
             master=top_bar,
             text="Ok",
-            font=("Hack Nerd Font", 15),
+            font=("Segoe UI", 15),
             width=70,
             command=self._close_app,
         ).pack(side="left", fill="x", padx=10, pady=10)
@@ -427,28 +427,28 @@ class _DrawApp:
 
         folders = self._get_places()
 
-        ctk.CTkLabel(master=frame, text="Places", font=("Hack Nerd Font", 15)).pack(
+        ctk.CTkLabel(master=frame, text="Places", font=("Segoe UI", 15)).pack(
             side=ctk.TOP, padx=5, pady=5
         )
 
         icons = {
-            os.getenv("USER"): "",
-            "Desktop": "",
-            "Downloads": "",
-            "Documents": "",
-            "Pictures": "",
-            "Music": "",
-            "Videos": "",
-            "Templates": "",
-            "Public": "",
+            os.getenv("USER"): "🏠",
+            "Desktop": "🖥",
+            "Downloads": "⬇",
+            "Documents": "📄",
+            "Pictures": "🖼",
+            "Music": "🎵",
+            "Videos": "🎬",
+            "Templates": "📋",
+            "Public": "👥",
         }
 
         for name, path in folders.items():
-            icon = icons.get(name, "")
+            icon = icons.get(name, "👤")
             ctk.CTkButton(
                 master=frame,
                 text=f"    {icon}  {name}",
-                font=("Hack Nerd Font", 14),
+                font=("Segoe UI", 14),
                 anchor="w",
                 fg_color="transparent",
                 hover_color="#8da3ae",
