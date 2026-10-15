@@ -1,7 +1,7 @@
 """
 This module is part of the CTkFileDialog library.
 
-It defines system path constants that point to useful directories such as the 
+It defines system path constants that point to useful directories such as the
 user's home, config, cache, and data folders, as well as the system PATH and temp directory.
 
 These constants follow the XDG Base Directory Specification where possible,
@@ -18,20 +18,30 @@ Available constants:
 - PATH:       List of directories in the system PATH environment variable.
 - VENV:       Path to the active Python virtual environment (VIRTUAL_ENV or CONDA_PREFIX).
 
-Author: Flick
-Repository: https://github.com/FlickGMD/CTkFileDialog
+Author: MTGC
+Repository: https://github.com/sirthegamercoder/CTkFileDialog
 """
 
-from .constants import PWD, HOME, PATH, TEMP, CONFIG_DIR, CACHE_DIR, DATA_DIR, VENV, PATHS
+from .constants import (
+    PWD,
+    HOME,
+    PATH,
+    TEMP,
+    CONFIG_DIR,
+    CACHE_DIR,
+    DATA_DIR,
+    VENV,
+    PATHS,
+)
 
 __all__ = [
-        'PWD',
-        'HOME',
-        'PATH',
-        'TEMP',
-        'CACHE_DIR',
-        'CONFIG_DIR',
-        'DATA_DIR',
-        'VENV',
-        'PATHS',
-        ]
+    "PWD",
+    "HOME",
+    "PATH",
+    "TEMP",
+    "CACHE_DIR",
+    "CONFIG_DIR",
+    "DATA_DIR",
+    "VENV",
+    "PATHS",
+]

@@ -1,8 +1,8 @@
-#!/usr/bin/env python
 import os
 import platform
 import ctypes
 from pathlib import Path
+
 
 def find_owner(path) -> str:
     system = platform.system()
@@ -12,13 +12,15 @@ def find_owner(path) -> str:
         return _get_windows_owner(path)
     else:
         return _get_unix_owner(path)
-    
+
+
 def _get_unix_owner(path: str) -> str:
     try:
         p = Path(path)
         return f"{p.owner()}"
     except Exception:
         return "unknown:unknown"
+
 
 def _get_windows_owner(path: str) -> str:
     import ctypes
@@ -39,8 +41,10 @@ def _get_windows_owner(path: str) -> str:
         SE_FILE_OBJECT,
         OWNER_SECURITY_INFORMATION,
         ctypes.byref(pSidOwner),
-        None, None, None,
-        ctypes.byref(pSD)
+        None,
+        None,
+        None,
+        ctypes.byref(pSD),
     )
 
     if result != 0:
@@ -59,7 +63,7 @@ def _get_windows_owner(path: str) -> str:
         ctypes.byref(name_size),
         domain,
         ctypes.byref(domain_size),
-        ctypes.byref(sid_name_use)
+        ctypes.byref(sid_name_use),
     )
 
     LocalFree(pSD)
