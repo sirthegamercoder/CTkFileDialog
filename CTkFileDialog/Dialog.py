@@ -48,9 +48,7 @@ class _CustomToolTip(CTkToolTip):
 class _System:
     @staticmethod
     def get_path(path: Optional[str] = None) -> str:
-        if path is None:
-            path = os.getcwd()
-        return f"{path}" if path == os.getenv("HOME") else path
+        return path if path is not None else os.getcwd()
 
     @staticmethod
     def parse_path(path: str) -> str:
@@ -58,6 +56,55 @@ class _System:
 
 
 class _DrawApp:
+    _ICON_FILES = {
+        "folder": "folder.png",
+        "bash": "bash.png",
+        "image": "image.png",
+        "python": "python.png",
+        "text": "text.png",
+        "markdown": "markdown.png",
+        "javascript": "javascript.png",
+        "php": "php.png",
+        "html": "html.png",
+        "css": "css.png",
+        "ini": "ini.png",
+        "conf": "conf.png",
+        "exe": "exe.png",
+        "odt": "odt.png",
+        "pdf": "pdf.png",
+        "json": "json.png",
+        "gz": "gz.png",
+        "video": "video.png",
+        "webp": "image.png",
+        "default": "text.png",
+    }
+
+    _EXTENSION_ICONS = {
+        ".webp": "webp",
+        ".awk": "bash",
+        ".mp4": "video",
+        ".mkv": "video",
+        ".sh": "bash",
+        ".zsh": "bash",
+        ".py": "python",
+        ".png": "image",
+        ".jpg": "image",
+        ".jpeg": "image",
+        ".txt": "text",
+        ".js": "javascript",
+        ".md": "markdown",
+        ".php": "php",
+        ".html": "html",
+        ".css": "css",
+        ".ini": "ini",
+        ".conf": "conf",
+        ".json": "json",
+        ".odt": "odt",
+        ".pdf": "pdf",
+        ".exe": "exe",
+        ".gz": "gz",
+    }
+
     def __init__(
         self,
         method: str,
@@ -86,6 +133,9 @@ class _DrawApp:
 
         self.current_path = _System.parse_path(current_path or os.getcwd())
         self.current_theme = ctk.get_appearance_mode()
+        self._text_color = (
+            "#000000" if self.current_theme.lower() == "light" else "#cccccc"
+        )
 
         self.selected_file: Optional[str] = ""
         self.selected_objects: list = []
@@ -99,7 +149,12 @@ class _DrawApp:
         self.entire_paths: list = []
 
         self._BASE_DIR = Path(__file__).parent
-        self._load_icons()
+        self._icons_dir = self._BASE_DIR / "icons"
+
+        self._icon_cache: dict = {}
+        self._image_cache: dict = {}
+        self._video_cache: dict = {}
+        self._info_cache: dict = {}
 
         self.app = ctk.CTkToplevel()
         self.app.title(title)
@@ -135,60 +190,14 @@ class _DrawApp:
         except Exception:
             pass
 
-    def _load_icons(self):
-        icon_path = self._BASE_DIR / "icons"
-
-        def _icon(name: str) -> ctk.CTkImage:
-            return ctk.CTkImage(Image.open(icon_path / name), size=(40, 40))
-
-        self.icons = {
-            "folder": _icon("folder.png"),
-            "bash": _icon("bash.png"),
-            "image": _icon("image.png"),
-            "python": _icon("python.png"),
-            "text": _icon("text.png"),
-            "markdown": _icon("markdown.png"),
-            "javascript": _icon("javascript.png"),
-            "php": _icon("php.png"),
-            "html": _icon("html.png"),
-            "css": _icon("css.png"),
-            "ini": _icon("ini.png"),
-            "conf": _icon("conf.png"),
-            "exe": _icon("exe.png"),
-            "odt": _icon("odt.png"),
-            "pdf": _icon("pdf.png"),
-            "json": _icon("json.png"),
-            "gz": _icon("gz.png"),
-            "video": _icon("video.png"),
-            "webp": _icon("image.png"),
-            "default": _icon("text.png"),
-        }
-
-        self.extension_icons = {
-            ".webp": "webp",
-            ".awk": "bash",
-            ".mp4": "video",
-            ".mkv": "video",
-            ".sh": "bash",
-            ".zsh": "bash",
-            ".py": "python",
-            ".png": "image",
-            ".jpg": "image",
-            ".jpeg": "image",
-            ".txt": "text",
-            ".js": "javascript",
-            ".md": "markdown",
-            ".php": "php",
-            ".html": "html",
-            ".css": "css",
-            ".ini": "ini",
-            ".conf": "conf",
-            ".json": "json",
-            ".odt": "odt",
-            ".pdf": "pdf",
-            ".exe": "exe",
-            ".gz": "gz",
-        }
+    def _icon(self, key: str) -> ctk.CTkImage:
+        cached = self._icon_cache.get(key)
+        if cached is not None:
+            return cached
+        filename = self._ICON_FILES.get(key, self._ICON_FILES["default"])
+        img = ctk.CTkImage(Image.open(self._icons_dir / filename), size=(40, 40))
+        self._icon_cache[key] = img
+        return img
 
     def _update_entry(self, path: str) -> None:
         self.PathEntry.configure(state="normal")
@@ -218,11 +227,23 @@ class _DrawApp:
         except Exception:
             return False
 
+    def _is_image_cached(self, path: str) -> bool:
+        hit = self._image_cache.get(path)
+        if hit is None:
+            hit = self._is_image(path)
+            self._image_cache[path] = hit
+        return hit
+
+    def _is_video_cached(self, path: str) -> bool:
+        hit = self._video_cache.get(path)
+        if hit is None:
+            hit = self._is_video(path)
+            self._video_cache[path] = hit
+        return hit
+
     def _get_video_frame(
         self, path: str, frame_number: int = 10
     ) -> Optional[Image.Image]:
-        if not self._is_video(path):
-            return None
         try:
             cap = cv2.VideoCapture(path)
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
@@ -235,18 +256,27 @@ class _DrawApp:
             pass
         return None
 
-    @staticmethod
-    def _get_info(path: str) -> str:
+    def _get_info(self, path: str) -> str:
         try:
             st = os.stat(path)
+            key = (path, st.st_mtime)
+            cached = self._info_cache.get(key)
+            if cached is not None:
+                return cached
+
             owner = find_owner(path)
             created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_ctime))
-            return (
+            info = (
                 f"File: {os.path.basename(path)}\n"
                 f"Creation: {created}\n"
                 f"Owner: {owner}\n"
                 f"Path: {path}"
             )
+            self._info_cache = {
+                k: v for k, v in self._info_cache.items() if k[0] != path
+            }
+            self._info_cache[key] = info
+            return info
         except Exception as e:
             return f"Error retrieving info: {e}"
 
@@ -260,11 +290,7 @@ class _DrawApp:
                     btn.configure(
                         fg_color="transparent",
                         hover_color="#8da3ae",
-                        text_color=(
-                            "#000000"
-                            if self.current_theme.lower() == "light"
-                            else "#cccccc"
-                        ),
+                        text_color=self._text_color,
                     )
                 except TclError:
                     pass
@@ -282,11 +308,7 @@ class _DrawApp:
             path = _System.parse_path(path)
         except (OSError, ValueError):
             self._update_entry(str(self.current_path))
-            CTkMessagebox(
-                message="Invalid path.",
-                title="Error",
-                icon="cancel",
-            )
+            CTkMessagebox(message="Invalid path.", title="Error", icon="cancel")
             return
 
         if os.path.isdir(path):
@@ -323,11 +345,7 @@ class _DrawApp:
 
         if self.method == "askopenfile":
             if not os.path.isfile(path):
-                CTkMessagebox(
-                    message="File not found!",
-                    title="Error",
-                    icon="cancel",
-                )
+                CTkMessagebox(message="File not found!", title="Error", icon="cancel")
                 self._update_entry(str(self.current_path))
                 return
             self._temp_item = path
@@ -340,11 +358,7 @@ class _DrawApp:
             return
 
         self._update_entry(str(self.current_path))
-        CTkMessagebox(
-            message="Not a regular file.",
-            title="Error",
-            icon="cancel",
-        )
+        CTkMessagebox(message="Not a regular file.", title="Error", icon="cancel")
 
     def _close_app(self):
         if self.method == "asksaveasfilename":
@@ -458,9 +472,7 @@ class _DrawApp:
                 anchor="w",
                 fg_color="transparent",
                 hover_color="#8da3ae",
-                text_color=(
-                    "#000000" if self.current_theme.lower() == "light" else "#cccccc"
-                ),
+                text_color=self._text_color,
                 corner_radius=2,
                 border_width=0,
                 command=lambda p=path: self.navigate_to(p),
@@ -597,9 +609,7 @@ class _DrawApp:
             button.configure(
                 fg_color="transparent",
                 hover_color="#8da3ae",
-                text_color=(
-                    "#000000" if self.current_theme.lower() == "light" else "#cccccc"
-                ),
+                text_color=self._text_color,
             )
             if button in self._all_buttons:
                 self._all_buttons.remove(button)
@@ -639,9 +649,7 @@ class _DrawApp:
                 anchor="w",
                 fg_color="transparent",
                 hover_color="#8da3ae",
-                text_color=(
-                    "#000000" if self.current_theme.lower() == "light" else "#cccccc"
-                ),
+                text_color=self._text_color,
                 command=command,
             )
 
@@ -668,26 +676,26 @@ class _DrawApp:
 
     def _get_icon(self, full_path: str, name: str) -> ctk.CTkImage:
         if os.path.isdir(full_path):
-            return self.icons["folder"]
+            return self._icon("folder")
 
-        if self.preview_img and self._is_image(full_path):
+        if self.preview_img and self._is_image_cached(full_path):
             try:
                 img = Image.open(full_path)
                 img.thumbnail((32, 32))
                 return ctk.CTkImage(light_image=img, dark_image=img, size=(32, 32))
             except Exception:
-                return self.icons.get("image", self.icons["default"])
+                return self._icon("image")
 
-        if self.video_preview and self._is_video(full_path):
+        if self.video_preview and self._is_video_cached(full_path):
             frame = self._get_video_frame(full_path, frame_number=10)
             if frame:
                 frame.thumbnail((32, 32))
                 return ctk.CTkImage(light_image=frame, dark_image=frame, size=(32, 32))
-            return self.icons.get("video", self.icons["default"])
+            return self._icon("video")
 
         ext = os.path.splitext(name)[1].lower()
-        key = self.extension_icons.get(ext, "default")
-        return self.icons.get(key, self.icons["default"])
+        key = self._EXTENSION_ICONS.get(ext, "default")
+        return self._icon(key)
 
     def _check_scroll(self):
         try:
@@ -707,6 +715,10 @@ class _DrawApp:
             pass
 
         self._clear_content()
+
+        self._image_cache.clear()
+        self._video_cache.clear()
+        self._info_cache.clear()
 
         try:
             entries = list(os.scandir(self.current_path))
@@ -776,6 +788,7 @@ class _MiniDialog:
         geometry: str = "500x400",
         title: str = "CTkFileDialog",
         icon_path: Optional[str] = None,
+        **ignored,
     ):
         self.method = method
         self._extra_method = _extra_method
@@ -918,11 +931,7 @@ class _MiniDialog:
                 self.update_entry(fallback)
                 return self.list_files()
 
-            CTkMessagebox(
-                message="Directory not found!",
-                title="Error",
-                icon="cancel",
-            )
+            CTkMessagebox(message="Directory not found!", title="Error", icon="cancel")
             self.update_entry(self.initial_dir)
             return
 
@@ -935,11 +944,7 @@ class _MiniDialog:
         try:
             entries = list(os.scandir(path))
         except PermissionError:
-            CTkMessagebox(
-                message="Permission denied!",
-                title="Error",
-                icon="cancel",
-            )
+            CTkMessagebox(message="Permission denied!", title="Error", icon="cancel")
             self.update_entry(self.initial_dir)
             return
         except OSError as e:
@@ -1048,23 +1053,29 @@ class _MiniDialog:
             self.master.destroy()
 
     def _on_select(self):
-        path = self.path_entry.get().strip()
-        if path:
-            path = _System.parse_path(path)
-            if _path_is_selectable(path):
-                if self.method == "askdirectory" and os.path.isdir(path):
-                    self.selected_path = path
-                    self._finalize = True
-                    self.master.destroy()
-                    return
-                if self.method in (
-                    "askopenfilename",
-                    "askopenfile",
-                ) and os.path.isfile(path):
-                    self.selected_path = path
-                    self._finalize = True
-                    self.master.destroy()
-                    return
+        raw = self.path_entry.get().strip()
+        path = _System.parse_path(raw) if raw else None
+
+        if (
+            self.method
+            in (
+                "askopenfilename",
+                "askopenfile",
+                "askdirectory",
+            )
+            and path
+            and _path_is_selectable(path)
+        ):
+            if self.method == "askdirectory" and os.path.isdir(path):
+                self.selected_path = path
+                self._finalize = True
+                self.master.destroy()
+                return
+            if self.method != "askdirectory" and os.path.isfile(path):
+                self.selected_path = path
+                self._finalize = True
+                self.master.destroy()
+                return
 
         if self.method in ("asksaveasfile", "asksaveasfilename"):
             if not path or os.path.isdir(path):
