@@ -16,7 +16,7 @@ This is a rewritten fork (by [sirthegamercoder](https://github.com/sirthegamerco
 - 📁 Directory selection
 - 💾 Save file dialog (return path or open file)
 - ❔ Tooltip support
-- 🖥️ Shell Path Syntax Support
+- 🖥️ Shell path syntax support
 - ⌨️ Backspace using Alt + Left Arrow shortcut 
 - 💡 Data type validation at runtime and for static type analyzers
 
