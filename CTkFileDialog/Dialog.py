@@ -55,28 +55,80 @@ class _System:
         return os.path.abspath(os.path.expanduser(os.path.expandvars(path)))
 
 
+def _load_ctk_icon(
+    icons_dir: Path,
+    icon_files: dict,
+    key: str,
+    size: int = 32,
+    cache: Optional[dict] = None,
+) -> Optional[ctk.CTkImage]:
+    if cache is None:
+        cache = {}
+
+    cache_key = (key, size)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    filename = icon_files.get(key, icon_files.get("default", ""))
+    path = icons_dir / filename
+
+    def _load(p: Path):
+        img = Image.open(p).convert("RGBA")
+        bbox = img.getbbox()
+        if bbox:
+            img = img.crop(bbox)
+        img = img.resize((size * 2, size * 2), Image.LANCZOS)
+        return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
+
+    try:
+        icon = _load(path)
+    except (FileNotFoundError, OSError):
+        fallback_name = icon_files.get("default", "")
+        if not fallback_name:
+            return None
+        try:
+            icon = _load(icons_dir / fallback_name)
+        except (FileNotFoundError, OSError):
+            return None
+
+    cache[cache_key] = icon
+    return icon
+
+
 class _DrawApp:
     _ICON_FILES = {
-        "folder": "folder.png",
-        "bash": "bash.png",
-        "image": "image.png",
-        "python": "python.png",
-        "text": "text.png",
-        "markdown": "markdown.png",
-        "javascript": "javascript.png",
-        "php": "php.png",
-        "html": "html.png",
-        "css": "css.png",
-        "ini": "ini.png",
-        "conf": "conf.png",
-        "exe": "exe.png",
-        "odt": "odt.png",
-        "pdf": "pdf.png",
-        "json": "json.png",
-        "gz": "gz.png",
-        "video": "video.png",
-        "webp": "image.png",
-        "default": "text.png",
+        "folder": "filetypes/folder.png",
+        "bash": "filetypes/bash.png",
+        "image": "filetypes/image.png",
+        "python": "filetypes/python.png",
+        "text": "filetypes/text.png",
+        "markdown": "filetypes/markdown.png",
+        "javascript": "filetypes/javascript.png",
+        "php": "filetypes/php.png",
+        "html": "filetypes/html.png",
+        "css": "filetypes/css.png",
+        "ini": "filetypes/ini.png",
+        "conf": "filetypes/conf.png",
+        "exe": "filetypes/exe.png",
+        "odt": "filetypes/odt.png",
+        "pdf": "filetypes/pdf.png",
+        "json": "filetypes/json.png",
+        "gz": "filetypes/gz.png",
+        "video": "filetypes/video.png",
+        "webp": "filetypes/image.png",
+        "home": "sidebar/home.png",
+        "desktop": "sidebar/desktop.png",
+        "downloads": "sidebar/downloads.png",
+        "documents": "sidebar/documents.png",
+        "pictures": "sidebar/pictures.png",
+        "music": "sidebar/music.png",
+        "videos": "sidebar/videos.png",
+        "templates": "sidebar/templates.png",
+        "public": "sidebar/public.png",
+        "back": "toolbar/back.png",
+        "up": "toolbar/up.png",
+        "default": "filetypes/text.png",
     }
 
     _EXTENSION_ICONS = {
@@ -190,14 +242,10 @@ class _DrawApp:
         except Exception:
             pass
 
-    def _icon(self, key: str) -> ctk.CTkImage:
-        cached = self._icon_cache.get(key)
-        if cached is not None:
-            return cached
-        filename = self._ICON_FILES.get(key, self._ICON_FILES["default"])
-        img = ctk.CTkImage(Image.open(self._icons_dir / filename), size=(40, 40))
-        self._icon_cache[key] = img
-        return img
+    def _icon(self, key: str, size: int = 32) -> ctk.CTkImage:
+        return _load_ctk_icon(
+            self._icons_dir, self._ICON_FILES, key, size, self._icon_cache
+        )
 
     def _update_entry(self, path: str) -> None:
         self.PathEntry.configure(state="normal")
@@ -422,8 +470,8 @@ class _DrawApp:
 
         ctk.CTkButton(
             master=top_bar,
-            text="←",
-            font=("Segoe UI", 15),
+            text="",
+            image=self._icon("back", size=20),
             width=70,
             command=self._go_back,
         ).pack(side="left", fill="x", padx=10, pady=10)
@@ -451,23 +499,24 @@ class _DrawApp:
             side=ctk.TOP, padx=5, pady=5
         )
 
-        icons = {
-            os.getenv("USER"): "🏠",
-            "Desktop": "🖥",
-            "Downloads": "⬇",
-            "Documents": "📄",
-            "Pictures": "🖼",
-            "Music": "🎵",
-            "Videos": "🎬",
-            "Templates": "📋",
-            "Public": "👥",
+        place_icon_keys = {
+            "Desktop": "desktop",
+            "Downloads": "downloads",
+            "Documents": "documents",
+            "Pictures": "pictures",
+            "Music": "music",
+            "Videos": "videos",
+            "Templates": "templates",
+            "Public": "public",
         }
 
         for name, path in folders.items():
-            icon = icons.get(name, "👤")
+            icon_key = place_icon_keys.get(name, "home")
             ctk.CTkButton(
                 master=frame,
-                text=f"    {icon}  {name}",
+                text=f"   {name}",
+                image=self._icon(icon_key, size=20),
+                compound="left",
                 font=("Segoe UI", 14),
                 anchor="w",
                 fg_color="transparent",
@@ -676,7 +725,7 @@ class _DrawApp:
 
     def _get_icon(self, full_path: str, name: str) -> ctk.CTkImage:
         if os.path.isdir(full_path):
-            return self._icon("folder")
+            return self._icon("folder", size=32)
 
         if self.preview_img and self._is_image_cached(full_path):
             try:
@@ -684,18 +733,18 @@ class _DrawApp:
                 img.thumbnail((32, 32))
                 return ctk.CTkImage(light_image=img, dark_image=img, size=(32, 32))
             except Exception:
-                return self._icon("image")
+                return self._icon("image", size=32)
 
         if self.video_preview and self._is_video_cached(full_path):
             frame = self._get_video_frame(full_path, frame_number=10)
             if frame:
                 frame.thumbnail((32, 32))
                 return ctk.CTkImage(light_image=frame, dark_image=frame, size=(32, 32))
-            return self._icon("video")
+            return self._icon("video", size=32)
 
         ext = os.path.splitext(name)[1].lower()
         key = self._EXTENSION_ICONS.get(ext, "default")
-        return self._icon(key)
+        return self._icon(key, size=32)
 
     def _check_scroll(self):
         try:
@@ -777,6 +826,11 @@ class _DrawApp:
 
 
 class _MiniDialog:
+    _ICON_FILES = {
+        "up": "toolbar/up.png",
+        "default": "filetypes/text.png",
+    }
+
     def __init__(
         self,
         method: str,
@@ -809,6 +863,8 @@ class _MiniDialog:
         self._finalize = False
 
         self._PATH = os.path.dirname(os.path.realpath(__file__))
+        self._icons_dir = Path(self._PATH) / "icons"
+        self._icon_cache: dict = {}
         self.folder_image = self._load_image(
             os.path.join(self._PATH, "icons/_IconsMini/folder.png")
         )
@@ -837,6 +893,11 @@ class _MiniDialog:
             pass
         self.master.wait_window()
 
+    def _icon(self, key: str, size: int = 20) -> Optional[ctk.CTkImage]:
+        return _load_ctk_icon(
+            self._icons_dir, self._ICON_FILES, key, size, self._icon_cache
+        )
+
     def _build_top_side(self):
         self.frame = ctk.CTkFrame(self.master)
         self.frame.pack(fill=ctk.BOTH, expand=True)
@@ -853,9 +914,13 @@ class _MiniDialog:
             for key in ("<Tab>", "<Down>", "<Up>"):
                 self.path_entry.bind(key, self._autocomplete)
 
-        ctk.CTkButton(path_frame, text="↑", width=30, command=self._up).pack(
-            side=ctk.RIGHT, padx=10, pady=10
-        )
+        ctk.CTkButton(
+            path_frame,
+            text="",
+            image=self._icon("up", size=20),
+            width=30,
+            command=self._up,
+        ).pack(side=ctk.RIGHT, padx=10, pady=10)
 
         btn_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
         btn_frame.pack(side=ctk.BOTTOM, fill=ctk.X, padx=10, pady=10)
