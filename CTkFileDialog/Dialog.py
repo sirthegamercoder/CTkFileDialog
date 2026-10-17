@@ -196,7 +196,7 @@ class _DrawApp:
         self._all_buttons: list = []
         self.tab_index = -1
         self.LOADED = 0
-        self.BATCH = 50
+        self.BATCH = 30
         self.archivos: list = []
         self.entire_paths: list = []
 
@@ -233,10 +233,20 @@ class _DrawApp:
             self.selected_file = None
             self.selected_objects = []
 
+        if getattr(self, "_scroll_job", None):
+            try:
+                self.app.after_cancel(self._scroll_job)
+            except Exception:
+                pass
+            self._scroll_job = None
+
         try:
             self.app.unbind_all("<MouseWheel>")
+            self.app.unbind_all("<Button-4>")
+            self.app.unbind_all("<Button-5>")
         except Exception:
             pass
+
         try:
             self.app.destroy()
         except Exception:
@@ -597,21 +607,24 @@ class _DrawApp:
         )
 
         self._bind_scroll()
+        self.CenterSideFrame._parent_canvas.bind(
+            "<<Scroll>>", lambda _: self._check_scroll(), add="+"
+        )
 
         self.content_frame = ctk.CTkFrame(master=self.CenterSideFrame)
         self.content_frame.pack(side="top", fill="both", expand=True, padx=20, pady=10)
 
         self._list_files()
 
-    def _bind_scroll(self):
+    def _bind_scroll(self) -> None:
         canvas = self.CenterSideFrame._parent_canvas
+        self._scroll_accum = 0
 
         def _on_mousewheel(event):
             x1 = self.CenterSideFrame.winfo_rootx()
             y1 = self.CenterSideFrame.winfo_rooty()
             x2 = x1 + self.CenterSideFrame.winfo_width()
             y2 = y1 + self.CenterSideFrame.winfo_height()
-
             if not (x1 <= event.x_root <= x2 and y1 <= event.y_root <= y2):
                 return
 
@@ -620,17 +633,24 @@ class _DrawApp:
             elif event.num == 5:
                 canvas.yview_scroll(1, "units")
             else:
-                canvas.yview_scroll(-int(event.delta / 120), "units")
+                delta = event.delta
+                if abs(delta) < 120:
+                    self._scroll_accum += delta
+                    steps = int(self._scroll_accum / 120)
+                    if steps == 0:
+                        return
+                    self._scroll_accum -= steps * 120
+                else:
+                    steps = int(delta / 120)
+                canvas.yview_scroll(-steps, "units")
+
             self._check_scroll()
 
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        canvas.bind("<Button-4>", _on_mousewheel)
-        canvas.bind("<Button-5>", _on_mousewheel)
+        canvas.bind_all("<Button-4>", _on_mousewheel)
+        canvas.bind_all("<Button-5>", _on_mousewheel)
 
-        for widget in canvas.winfo_children():
-            widget.bind("<MouseWheel>", _on_mousewheel)
-            widget.bind("<Button-4>", _on_mousewheel)
-            widget.bind("<Button-5>", _on_mousewheel)
+        self._scroll_handler = _on_mousewheel
 
     def _clear_content(self):
         for widget in self.content_frame.winfo_children():
@@ -670,7 +690,7 @@ class _DrawApp:
             if button not in self._all_buttons:
                 self._all_buttons.append(button)
 
-    def _load_batch(self, count: int):
+    def _load_batch(self, count: int) -> None:
         columns = 5
         row = self.LOADED // columns
         col = self.LOADED % columns
@@ -748,11 +768,22 @@ class _DrawApp:
         key = self._EXTENSION_ICONS.get(ext, "default")
         return self._icon(key, size=32)
 
-    def _check_scroll(self):
+    def _check_scroll(self) -> None:
+        if getattr(self, "_scroll_job", None):
+            try:
+                self.app.after_cancel(self._scroll_job)
+            except Exception:
+                pass
+        self._scroll_job = self.app.after(150, self._do_check_scroll)
+
+    def _do_check_scroll(self) -> None:
+        self._scroll_job = None
+        if self.LOADED >= len(self.archivos):
+            return
         try:
             canvas = self.CenterSideFrame._parent_canvas
-            if canvas.yview()[1] > 0.98 and self.LOADED < len(self.archivos):
-                self._load_batch(5)
+            if canvas.yview()[1] > 0.98:
+                self._load_batch(10)
         except TclError:
             pass
 
