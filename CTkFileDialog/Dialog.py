@@ -329,7 +329,8 @@ class _DrawApp:
             return f"Error retrieving info: {e}"
 
     def _reset_selection(self) -> None:
-        self._temp_item = None
+        if self.method != "askdirectory":
+            self._temp_item = None
         self._temp_items.clear()
         self.selected_objects.clear()
         for btn in self._all_buttons:
@@ -414,20 +415,21 @@ class _DrawApp:
             if entry_value and not os.path.isdir(entry_value):
                 self.selected_file = entry_value
 
+        if self.method == "askdirectory":
+            candidate = self._temp_item or self.current_path
+            if (
+                candidate
+                and _path_is_selectable(candidate)
+                and os.path.isdir(candidate)
+            ):
+                self.selected_file = candidate
+                self.protocol_windows()
+                return
+
         if self._temp_item and _path_is_selectable(self._temp_item):
             self.selected_file = self._temp_item
             self.protocol_windows()
             return
-
-        if self._temp_items:
-            valid = [p for p in self._temp_items if _path_is_selectable(p)]
-            valid = _dedupe_preserving_order(valid)
-
-            if self.method in ("askopenfilenames", "askopenfiles"):
-                self.selected_objects = [p for p in valid if not os.path.isdir(p)]
-                if self.selected_objects:
-                    self.protocol_windows()
-                    return
 
         self.protocol_windows()
 
