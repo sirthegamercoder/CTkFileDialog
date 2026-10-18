@@ -646,8 +646,14 @@ class _DrawApp:
         canvas.bind("<Button-4>", _on_mousewheel, add="+")
         canvas.bind("<Button-5>", _on_mousewheel, add="+")
 
+        original_yscroll = canvas.cget("yscrollcommand")
+
         def _on_yscroll(first, last):
-            canvas.set(first, last)
+            if original_yscroll:
+                try:
+                    self.app.tk.call(original_yscroll, first, last)
+                except Exception:
+                    pass
             self._schedule_scroll_check()
 
         canvas.configure(yscrollcommand=_on_yscroll)
