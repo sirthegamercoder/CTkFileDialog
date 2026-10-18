@@ -200,6 +200,10 @@ class _DrawApp:
         self.archivos: list = []
         self.entire_paths: list = []
 
+        self._scroll_job: Optional[str] = None
+        self._load_job: Optional[str] = None
+        self._scroll_accum = 0
+
         self._BASE_DIR = Path(__file__).parent
         self._icons_dir = self._BASE_DIR / "icons"
 
@@ -207,6 +211,7 @@ class _DrawApp:
         self._image_cache: dict = {}
         self._video_cache: dict = {}
         self._info_cache: dict = {}
+        self._thumb_cache: dict = {}
 
         self.app = ctk.CTkToplevel()
         self.app.title(title)
@@ -233,19 +238,14 @@ class _DrawApp:
             self.selected_file = None
             self.selected_objects = []
 
-        if getattr(self, "_scroll_job", None):
-            try:
-                self.app.after_cancel(self._scroll_job)
-            except Exception:
-                pass
-            self._scroll_job = None
-
-        try:
-            self.app.unbind_all("<MouseWheel>")
-            self.app.unbind_all("<Button-4>")
-            self.app.unbind_all("<Button-5>")
-        except Exception:
-            pass
+        for attr in ("_scroll_job", "_load_job"):
+            job = getattr(self, attr, None)
+            if job is not None:
+                try:
+                    self.app.after_cancel(job)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
 
         try:
             self.app.destroy()
@@ -607,9 +607,6 @@ class _DrawApp:
         )
 
         self._bind_scroll()
-        self.CenterSideFrame._parent_canvas.bind(
-            "<<Scroll>>", lambda _: self._check_scroll(), add="+"
-        )
 
         self.content_frame = ctk.CTkFrame(master=self.CenterSideFrame)
         self.content_frame.pack(side="top", fill="both", expand=True, padx=20, pady=10)
@@ -619,13 +616,12 @@ class _DrawApp:
     def _bind_scroll(self) -> None:
         canvas = self.CenterSideFrame._parent_canvas
         self._scroll_accum = 0
+        self._scroll_job = None
+        self._load_job = None
 
         def _on_mousewheel(event):
-            x1 = self.CenterSideFrame.winfo_rootx()
-            y1 = self.CenterSideFrame.winfo_rooty()
-            x2 = x1 + self.CenterSideFrame.winfo_width()
-            y2 = y1 + self.CenterSideFrame.winfo_height()
-            if not (x1 <= event.x_root <= x2 and y1 <= event.y_root <= y2):
+            widget = event.widget
+            if widget is not canvas and not str(widget).startswith(str(canvas)):
                 return
 
             if event.num == 4:
@@ -644,13 +640,52 @@ class _DrawApp:
                     steps = int(delta / 120)
                 canvas.yview_scroll(-steps, "units")
 
-            self._check_scroll()
+            self._schedule_scroll_check()
 
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        canvas.bind_all("<Button-4>", _on_mousewheel)
-        canvas.bind_all("<Button-5>", _on_mousewheel)
+        canvas.bind("<MouseWheel>", _on_mousewheel, add="+")
+        canvas.bind("<Button-4>", _on_mousewheel, add="+")
+        canvas.bind("<Button-5>", _on_mousewheel, add="+")
+
+        def _on_yscroll(first, last):
+            canvas.set(first, last)
+            self._schedule_scroll_check()
+
+        canvas.configure(yscrollcommand=_on_yscroll)
 
         self._scroll_handler = _on_mousewheel
+
+    def _schedule_scroll_check(self) -> None:
+        if self._scroll_job is not None:
+            return
+        self._scroll_job = self.app.after_idle(self._do_check_scroll)
+
+    def _check_scroll(self) -> None:
+        self._schedule_scroll_check()
+
+    def _do_check_scroll(self) -> None:
+        self._scroll_job = None
+        if self.LOADED >= len(self.archivos):
+            return
+        try:
+            canvas = self.CenterSideFrame._parent_canvas
+            if canvas.yview()[1] > 0.98:
+                self._load_batch_async(10)
+        except TclError:
+            pass
+
+    def _load_batch_async(self, count: int) -> None:
+        if self._load_job is not None:
+            return
+        if self.LOADED >= len(self.archivos):
+            return
+        self._load_job = self.app.after(16, lambda: self._do_load_batch(count))
+
+    def _do_load_batch(self, count: int) -> None:
+        self._load_job = None
+        try:
+            self._load_batch(count)
+        except TclError:
+            pass
 
     def _clear_content(self):
         for widget in self.content_frame.winfo_children():
@@ -725,7 +760,11 @@ class _DrawApp:
             )
 
             if self.tool_tip:
-                _CustomToolTip(widget=button, message=self._get_info(full_path))
+                button.bind(
+                    "<Enter>",
+                    lambda _e, b=button, p=full_path: self._attach_tooltip(b, p),
+                    add="+",
+                )
 
             if self.method in ("askopenfilenames", "askopenfiles"):
                 button.bind(
@@ -745,51 +784,82 @@ class _DrawApp:
             self.LOADED += 1
             count -= 1
 
+    def _attach_tooltip(self, button: ctk.CTkButton, path: str) -> None:
+        if getattr(button, "_tip", None) is not None:
+            return
+        try:
+            button._tip = _CustomToolTip(widget=button, message=self._get_info(path))
+        except Exception:
+            button._tip = None
+
     def _get_icon(self, full_path: str, name: str) -> ctk.CTkImage:
         if os.path.isdir(full_path):
             return self._icon("folder", size=32)
 
         if self.preview_img and self._is_image_cached(full_path):
-            try:
-                img = Image.open(full_path)
-                img.thumbnail((32, 32))
-                return ctk.CTkImage(light_image=img, dark_image=img, size=(32, 32))
-            except Exception:
-                return self._icon("image", size=32)
+            return self._thumb_from_image(full_path, "image")
 
         if self.video_preview and self._is_video_cached(full_path):
-            frame = self._get_video_frame(full_path, frame_number=10)
-            if frame:
-                frame.thumbnail((32, 32))
-                return ctk.CTkImage(light_image=frame, dark_image=frame, size=(32, 32))
-            return self._icon("video", size=32)
+            return self._thumb_from_video(full_path)
 
         ext = os.path.splitext(name)[1].lower()
         key = self._EXTENSION_ICONS.get(ext, "default")
         return self._icon(key, size=32)
 
-    def _check_scroll(self) -> None:
-        if getattr(self, "_scroll_job", None):
-            try:
-                self.app.after_cancel(self._scroll_job)
-            except Exception:
-                pass
-        self._scroll_job = self.app.after(150, self._do_check_scroll)
-
-    def _do_check_scroll(self) -> None:
-        self._scroll_job = None
-        if self.LOADED >= len(self.archivos):
-            return
+    def _thumb_from_image(self, path: str, fallback_key: str) -> ctk.CTkImage:
         try:
-            canvas = self.CenterSideFrame._parent_canvas
-            if canvas.yview()[1] > 0.98:
-                self._load_batch(10)
-        except TclError:
-            pass
+            mtime = os.stat(path).st_mtime
+        except OSError:
+            return self._icon(fallback_key, size=32)
+
+        key = ("img", path, mtime)
+        cached = self._thumb_cache.get(key)
+        if cached is not None:
+            return cached
+
+        try:
+            img = Image.open(path)
+            img.thumbnail((32, 32))
+            thumb = ctk.CTkImage(light_image=img, dark_image=img, size=(32, 32))
+        except Exception:
+            return self._icon(fallback_key, size=32)
+
+        self._thumb_cache[key] = thumb
+        return thumb
+
+    def _thumb_from_video(self, path: str) -> ctk.CTkImage:
+        try:
+            mtime = os.stat(path).st_mtime
+        except OSError:
+            return self._icon("video", size=32)
+
+        key = ("vid", path, mtime)
+        cached = self._thumb_cache.get(key)
+        if cached is not None:
+            return cached
+
+        frame = self._get_video_frame(path, frame_number=10)
+        if frame:
+            frame.thumbnail((32, 32))
+            thumb = ctk.CTkImage(light_image=frame, dark_image=frame, size=(32, 32))
+        else:
+            thumb = self._icon("video", size=32)
+
+        self._thumb_cache[key] = thumb
+        return thumb
 
     def _list_files(self) -> None:
         self.LOADED = 0
         self._reset_selection()
+
+        for attr in ("_scroll_job", "_load_job"):
+            job = getattr(self, attr, None)
+            if job is not None:
+                try:
+                    self.app.after_cancel(job)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
 
         try:
             self.CenterSideFrame._parent_canvas.yview_moveto(0)
@@ -836,7 +906,8 @@ class _DrawApp:
                 os.path.join(self.current_path, f) for f in self.archivos
             ]
 
-        self._load_batch(self.BATCH)
+        first = min(self.BATCH, len(self.archivos))
+        self._load_batch(first)
 
     def _autocomplete(self, event) -> str:
         paths = getattr(self, "entire_paths", None) or []
