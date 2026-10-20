@@ -1,7 +1,7 @@
 """
 File dialog created in custom Tkinter and inspired by the Tkinter dialog.
 
-- Version: 0.5.5
+- Version: 0.5.7
 - Author: MTGC
 - Github: https://github.com/sirthegamercoder/CTkFileDialog
 """
@@ -17,7 +17,7 @@ from ._functions import (
 )
 from . import Constants
 
-__version__ = "0.5.5"
+__version__ = "0.5.7"
 __all__ = [
     "askopenfilename",
     "askdirectory",

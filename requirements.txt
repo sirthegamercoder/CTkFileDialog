@@ -1,6 +1,6 @@
 opencv-python-headless
 customtkinter
 Pillow
-CTkMessagebox
+CTkMessagebox@git+https://github.com/sirthegamercoder/CTkMessagebox
 CTkToolTip
 typeguard

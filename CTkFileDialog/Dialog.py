@@ -367,7 +367,12 @@ class _DrawApp:
             path = _System.parse_path(path)
         except (OSError, ValueError):
             self._update_entry(str(self.current_path))
-            CTkMessagebox(message="Invalid path.", title="Error", icon="cancel")
+            CTkMessagebox(
+                master=self.app,
+                message="Invalid path.",
+                title="Error",
+                icon="cancel",
+            )
             return
 
         if os.path.isdir(path):
@@ -381,6 +386,7 @@ class _DrawApp:
         if not os.path.exists(path):
             self._update_entry(str(self.current_path))
             CTkMessagebox(
+                master=self.app,
                 message="No such file or directory!",
                 title="Error",
                 icon="cancel",
@@ -390,11 +396,13 @@ class _DrawApp:
         if self.method in ("asksaveasfile", "asksaveasfilename"):
             if os.path.isfile(path):
                 msg = CTkMessagebox(
+                    master=self.app,
                     message="This file already exists. Overwrite?",
                     icon="warning",
                     title="Warning",
                     option_1="Yes",
                     option_2="No",
+                    option_focus=2,
                 )
                 if msg.get() == "No":
                     return
@@ -404,7 +412,12 @@ class _DrawApp:
 
         if self.method == "askopenfile":
             if not os.path.isfile(path):
-                CTkMessagebox(message="File not found!", title="Error", icon="cancel")
+                CTkMessagebox(
+                    master=self.app,
+                    message="File not found!",
+                    title="Error",
+                    icon="cancel",
+                )
                 self._update_entry(str(self.current_path))
                 return
             self._temp_item = path
@@ -417,7 +430,12 @@ class _DrawApp:
             return
 
         self._update_entry(str(self.current_path))
-        CTkMessagebox(message="Not a regular file.", title="Error", icon="cancel")
+        CTkMessagebox(
+            master=self.app,
+            message="Not a regular file.",
+            title="Error",
+            icon="cancel",
+        )
 
     def _close_app(self):
         if self.method == "asksaveasfilename":
@@ -449,11 +467,13 @@ class _DrawApp:
 
         def on_exit():
             msg = CTkMessagebox(
+                master=self.app,
                 message="Do you want to exit?",
                 title="Exit",
                 option_1="Yes",
                 option_2="No",
                 icon="warning",
+                option_focus=2,
             )
             if msg.get() == "Yes":
                 self.selected_file = None
@@ -881,10 +901,16 @@ class _DrawApp:
         try:
             entries = list(os.scandir(self.current_path))
         except PermissionError:
-            CTkMessagebox(message="Permission denied!", title="Error", icon="cancel")
+            CTkMessagebox(
+                master=self.app,
+                message="Permission denied!",
+                title="Error",
+                icon="cancel",
+            )
             return
         except OSError as e:
             CTkMessagebox(
+                master=self.app,
                 message=f"Cannot read directory:\n{e}",
                 title="Error",
                 icon="cancel",
@@ -1106,7 +1132,12 @@ class _MiniDialog:
                 self.update_entry(fallback)
                 return self.list_files()
 
-            CTkMessagebox(message="Directory not found!", title="Error", icon="cancel")
+            CTkMessagebox(
+                master=self.master,
+                message="Directory not found!",
+                title="Error",
+                icon="cancel",
+            )
             self.update_entry(self.initial_dir)
             return
 
@@ -1119,11 +1150,17 @@ class _MiniDialog:
         try:
             entries = list(os.scandir(path))
         except PermissionError:
-            CTkMessagebox(message="Permission denied!", title="Error", icon="cancel")
+            CTkMessagebox(
+                master=self.master,
+                message="Permission denied!",
+                title="Error",
+                icon="cancel",
+            )
             self.update_entry(self.initial_dir)
             return
         except OSError as e:
             CTkMessagebox(
+                master=self.master,
                 message=f"Cannot read directory:\n{e}",
                 title="Error",
                 icon="cancel",
@@ -1200,7 +1237,12 @@ class _MiniDialog:
             path = _System.parse_path(raw)
         except (OSError, ValueError):
             self.update_entry(self.initial_dir)
-            CTkMessagebox(message="Invalid path.", title="Error", icon="cancel")
+            CTkMessagebox(
+                master=self.master,
+                message="Invalid path.",
+                title="Error",
+                icon="cancel",
+            )
             return
 
         if os.path.isdir(path):
@@ -1214,6 +1256,7 @@ class _MiniDialog:
 
         self.update_entry(self.initial_dir)
         CTkMessagebox(
+            master=self.master,
             title="Error",
             icon="cancel",
             message="No such file or directory!",
@@ -1258,6 +1301,7 @@ class _MiniDialog:
             parent = os.path.dirname(path) or "."
             if not os.path.isdir(parent):
                 CTkMessagebox(
+                    master=self.master,
                     message="Parent directory does not exist.",
                     title="Error",
                     icon="cancel",
@@ -1265,11 +1309,13 @@ class _MiniDialog:
                 return
             if os.path.exists(path) and self._extra_method != "askopenfile":
                 opts = CTkMessagebox(
+                    master=self.master,
                     message="This file already exists. Overwrite?",
                     title="Warning",
                     icon="warning",
                     option_1="Yes",
                     option_2="No",
+                    option_focus=2,
                 )
                 if opts.get() == "No":
                     return
@@ -1300,6 +1346,7 @@ class _MiniDialog:
                 return
             if not _path_is_selectable(self.selected_item):
                 CTkMessagebox(
+                    master=self.master,
                     message="Path no longer exists.",
                     title="Error",
                     icon="cancel",
