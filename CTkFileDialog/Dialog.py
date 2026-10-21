@@ -6,15 +6,66 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 import cv2
+import shutil
+import tempfile
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk
-from PIL import Image
+from PIL import Image, ImageTk
 from CTkMessagebox import CTkMessagebox
 from CTkToolTip import CTkToolTip
 from _tkinter import TclError
 
 from ._system import find_owner
+
+current_system = platform.system()
+
+
+def _set_window_icon(
+    window: tk.Misc,
+    icon_path: Optional[str],
+    cache: Optional[dict] = None,
+) -> None:
+    if not icon_path:
+        return
+    if cache is None:
+        cache = {}
+
+    try:
+        if current_system == "Windows":
+            ico_path = cache.get(("ico", icon_path))
+            if ico_path is None:
+                ico_path = _make_temp_ico(icon_path)
+                cache[("ico", icon_path)] = ico_path
+            if ico_path:
+                window.wm_iconbitmap(ico_path)
+        else:
+            photo = cache.get(("photo", icon_path))
+            if photo is None:
+                img = Image.open(icon_path).convert("RGBA")
+                photo = ImageTk.PhotoImage(img)
+                cache[("photo", icon_path)] = photo
+            window.iconphoto(False, photo)
+    except Exception:
+        pass
+
+
+def _make_temp_ico(image_path: str) -> Optional[str]:
+    try:
+        img = Image.open(image_path).convert("RGBA")
+        side = max(img.size)
+        square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+        square.paste(img, ((side - img.width) // 2, (side - img.height) // 2))
+        fd, ico_path = tempfile.mkstemp(suffix=".ico")
+        os.close(fd)
+        square.save(
+            ico_path,
+            format="ICO",
+            sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+        )
+        return ico_path
+    except Exception:
+        return None
 
 
 def _path_is_selectable(path: Optional[str]) -> bool:
@@ -212,15 +263,13 @@ class _DrawApp:
         self._video_cache: dict = {}
         self._info_cache: dict = {}
         self._thumb_cache: dict = {}
+        self._cv_safe_cache: dict = {}
 
         self.app = ctk.CTkToplevel()
         self.app.title(title)
         self.app.geometry(geometry)
         if icon_path:
-            try:
-                self.app.wm_iconbitmap(icon_path)
-            except Exception:
-                pass
+            _set_window_icon(self.app, icon_path, self._icon_cache)
         self.app.protocol("WM_DELETE_WINDOW", self.protocol_windows)
         self.app.bind("<Alt-Left>", lambda _: self._go_back())
 
@@ -232,6 +281,44 @@ class _DrawApp:
             self.app.grab_set()
         except TclError:
             pass
+
+    def _can_opencv_open(self, path: str) -> bool:
+        try:
+            cap = cv2.VideoCapture(path)
+            ok = cap.isOpened()
+            cap.release()
+            return ok
+        except Exception:
+            return False
+
+    def _opencv_safe_path(self, path: str) -> str:
+        if self._can_opencv_open(path):
+            return path
+        if not path.isascii():
+            cached = self._cv_safe_cache.get(path)
+            if cached and os.path.exists(cached):
+                return cached
+            try:
+                suffix = os.path.splitext(path)[1] or ".mp4"
+                fd, tmp = tempfile.mkstemp(prefix="ctkdlg_", suffix=suffix)
+                os.close(fd)
+                try:
+                    os.remove(tmp)
+                    try:
+                        os.link(path, tmp)
+                    except OSError:
+                        shutil.copyfile(path, tmp)
+                except Exception:
+                    try:
+                        os.remove(tmp)
+                    except Exception:
+                        pass
+                    return path
+            except Exception:
+                return path
+            self._cv_safe_cache[path] = tmp
+            return tmp
+        return path
 
     def protocol_windows(self):
         if not self.selected_file and not self.selected_objects:
@@ -246,6 +333,20 @@ class _DrawApp:
                 except Exception:
                     pass
                 setattr(self, attr, None)
+
+        for k, v in list(self._icon_cache.items()):
+            if k[0] == "ico" and v:
+                try:
+                    os.remove(v)
+                except Exception:
+                    pass
+
+        for tmp in self._cv_safe_cache.values():
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+        self._cv_safe_cache.clear()
 
         try:
             self.app.destroy()
@@ -296,6 +397,8 @@ class _DrawApp:
         hit = self._video_cache.get(path)
         if hit is None:
             hit = self._is_video(path)
+            if not hit and not path.isascii():
+                hit = self._is_video(self._opencv_safe_path(path))
             self._video_cache[path] = hit
         return hit
 
@@ -304,6 +407,9 @@ class _DrawApp:
     ) -> Optional[Image.Image]:
         try:
             cap = cv2.VideoCapture(path)
+            if not cap.isOpened() and not path.isascii():
+                cap.release()
+                cap = cv2.VideoCapture(self._opencv_safe_path(path))
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
             ret, frame = cap.read()
             cap.release()
@@ -887,6 +993,13 @@ class _DrawApp:
                     pass
                 setattr(self, attr, None)
 
+        for tmp in self._cv_safe_cache.values():
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+        self._cv_safe_cache.clear()
+
         try:
             self.CenterSideFrame._parent_canvas.yview_moveto(0)
         except Exception:
@@ -1012,11 +1125,9 @@ class _MiniDialog:
         self.master.geometry(geometry)
         self.master.title(title)
         if icon_path:
-            try:
-                self.master.wm_iconbitmap(icon_path)
-            except Exception:
-                pass
+            _set_window_icon(self.master, icon_path, self._icon_cache)
         self.master.bind("<Alt-Left>", lambda _: self._up())
+        self.master.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
         self._build_top_side()
         self._build_center_side()
@@ -1262,12 +1373,21 @@ class _MiniDialog:
             message="No such file or directory!",
         )
 
+    def _cleanup(self):
+        for k, v in list(self._icon_cache.items()):
+            if k[0] == "ico" and v:
+                try:
+                    os.remove(v)
+                except Exception:
+                    pass
+
     def _on_cancel(self, destroy: bool = True):
         self.selected_path = None
         self.selected_paths = None
         self.selected_item = None
         self._finalize = False
         if destroy:
+            self._cleanup()
             self.master.destroy()
 
     def _on_select(self):
@@ -1287,11 +1407,13 @@ class _MiniDialog:
             if self.method == "askdirectory" and os.path.isdir(path):
                 self.selected_path = path
                 self._finalize = True
+                self._cleanup()
                 self.master.destroy()
                 return
             if self.method != "askdirectory" and os.path.isfile(path):
                 self.selected_path = path
                 self._finalize = True
+                self._cleanup()
                 self.master.destroy()
                 return
 
@@ -1321,6 +1443,7 @@ class _MiniDialog:
                     return
             self.selected_path = path
             self._finalize = True
+            self._cleanup()
             self.master.destroy()
             return
 
@@ -1338,6 +1461,7 @@ class _MiniDialog:
             if paths:
                 self.selected_paths = paths
                 self._finalize = True
+                self._cleanup()
                 self.master.destroy()
             return
 
@@ -1360,6 +1484,7 @@ class _MiniDialog:
                     return
             self.selected_path = self.selected_item
             self._finalize = True
+            self._cleanup()
             self.master.destroy()
 
     def _on_click(self, event=None):
